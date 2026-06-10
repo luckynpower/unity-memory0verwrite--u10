@@ -81,28 +81,22 @@ class MainMenu(BaseScene):
         self._buttons = []
         if has_save:
             self._buttons.append({
-                "label": "CONTINUE MISSION",
-                "rect":  pygame.Rect(cx - 190, 420, 380, 54),
+                "label": "CONTINUE",
+                "rect":  pygame.Rect(cx - 150, 430, 300, 54),
                 "action": "continue",
                 "color": ACCENT_GREEN,
             })
-            self._buttons.append({
-                "label": "START OVER",
-                "rect":  pygame.Rect(cx - 140, 490, 280, 44),
-                "action": "new",
-                "color": TEXT_DIM,
-            })
         else:
             self._buttons.append({
-                "label": "START MISSION",
-                "rect":  pygame.Rect(cx - 170, 430, 340, 54),
+                "label": "START",
+                "rect":  pygame.Rect(cx - 130, 430, 260, 54),
                 "action": "start",
                 "color": ACCENT_GREEN,
             })
 
         self._buttons.append({
-            "label": "QUIT",
-            "rect":  pygame.Rect(cx - 90, 550 if has_save else 500, 180, 44),
+            "label": "EXIT",
+            "rect":  pygame.Rect(cx - 90, 502, 180, 44),
             "action": "quit",
             "color": TEXT_MUTED,
         })

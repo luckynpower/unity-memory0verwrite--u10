@@ -1,11 +1,13 @@
 """
-Room 2 — OSINT Investigator (fully playable).
+Room 2 — OSINT Investigator  (redesigned).
 
-Layout (1280 × 720):
-  ┌─ Header (65px) ──────────────────────────────────────────────────┐
-  ├─ Objective bar (40px) ───────────────────────────────────────────┤
-  ├── Left tabs (190px) ─┬─── Center feed (700px) ──┬─ Dossier (390px) ─┤
-  └─ Footer (46px) ──────────────────────────────────────────────────┘
+Three evidence tabs the player browses freely:
+  1. Photo Metadata  — EXIF data reveals Location and Timezone
+  2. Social Posts    — Cross-platform feed; one post names the target's pet
+  3. Username Reuse  — Same @n3uroph0x handle across three platforms
+
+Dossier panel (right): Name, Location, Timezone, Pet Name
+Each field is submitted individually; no global SUBMIT button.
 """
 import pygame
 from rooms.base_room import BaseRoom
@@ -13,20 +15,27 @@ from rooms.osint.data import PUZZLE
 from core.settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT,
     BG_DARK, BG_MID, BG_PANEL,
-    ACCENT_GREEN, ACCENT_CYAN, ACCENT_RED, ACCENT_ORANGE, ACCENT_YELLOW,
+    ACCENT_GREEN, ACCENT_CYAN, ACCENT_RED, ACCENT_ORANGE,
     TEXT_PRIMARY, TEXT_DIM, TEXT_MUTED, BORDER,
 )
 
-MAX_SCORE = PUZZLE["max_score"]
+_HEADER_H = 65
+_FOOTER_H = 46
+_BOTTOM   = SCREEN_HEIGHT - _FOOTER_H   # 674
 
-_HEADER_H  = 65
-_OBJBAR_H  = 38
-_FOOTER_H  = 44
-_LEFT_W    = 190
-_RIGHT_W   = 390
-_CENTER_W  = SCREEN_WIDTH - _LEFT_W - _RIGHT_W          # 700
-_CONTENT_Y = _HEADER_H + _OBJBAR_H
-_CONTENT_H = SCREEN_HEIGHT - _CONTENT_Y - _FOOTER_H
+# ── layout ────────────────────────────────────────────────────────────────────
+_TAB_Y     = _HEADER_H + 6        # 71
+_TAB_H     = 34
+_CONTENT_Y = _HEADER_H + 48       # 113
+_CONTENT_X = 14
+_DIVIDER_X = 882                   # separates evidence area from dossier
+_DOSSIER_X = _DIVIDER_X + 7
+_DOSSIER_W = SCREEN_WIDTH - _DOSSIER_X - 6   # 385
+_EV_W      = _DIVIDER_X - _CONTENT_X - 10    # evidence content width
+
+# Dossier fixed-slot layout
+_SLOT_H    = 116                   # height per dossier field slot
+_DOSSIER_BASE_Y = _HEADER_H + 42  # first slot starts here
 
 
 class Room(BaseRoom):
@@ -36,558 +45,529 @@ class Room(BaseRoom):
 
     def setup(self) -> None:
         self._data = PUZZLE
+        self._tab  = 0   # 0=photo  1=posts  2=username-reuse
 
-        self._fh1    = pygame.font.SysFont("consolas", 19, bold=True)
-        self._fbody  = pygame.font.SysFont("consolas", 14)
-        self._fsm    = pygame.font.SysFont("consolas", 12)
-        self._finput = pygame.font.SysFont("consolas", 14)
+        self._fh1   = pygame.font.SysFont("consolas", 20, bold=True)
+        self._fbody = pygame.font.SysFont("consolas", 15)
+        self._fsm   = pygame.font.SysFont("consolas", 13)
+        self._fmono = pygame.font.SysFont("consolas", 13)
+        self._fxs   = pygame.font.SysFont("consolas", 11)
 
-        self._platforms  = list(self._data["platforms"].keys())
-        self._active_pid = self._platforms[0]
-        self._scroll     = {pid: 0 for pid in self._platforms}
+        fields = self._data["dossier_fields"]
+        self._inputs:       dict[str, str]            = {f["key"]: "" for f in fields}
+        self._results:      dict[str, bool | None]    = {f["key"]: None for f in fields}
+        self._active:       str | None                = None
+        self._hints:        dict[str, int]            = {f["key"]: 0 for f in fields}
+        self._hint_visible: dict[str, bool]           = {f["key"]: False for f in fields}
 
-        # Dossier
-        self._inputs      = {f["key"]: "" for f in self._data["dossier_fields"]}
-        self._active_key  = None
-        self._cursor_on   = True
-        self._cursor_t    = 0.0
+        self._cursor_on = True
+        self._cursor_t  = 0.0
+        self._time      = 0.0
 
-        # Hints: track how many times each field's hint has been requested (0, 1, 2)
-        self._hint_level  = {f["key"]: 0 for f in self._data["dossier_fields"]}
-        self._hint_score_penalty = 0
+        # Populated each frame during draw — read in click handlers
+        self._tab_rects:    list[pygame.Rect]      = []
+        self._input_rects:  dict[str, pygame.Rect] = {}
+        self._submit_rects: dict[str, pygame.Rect] = {}
+        self._hint_rects:   dict[str, pygame.Rect] = {}
 
-        # Submission
-        self._submitted   = False
-        self._results: dict[str, bool] = {}
-        self._score       = 0
-        self._result_t    = 0.0
+    # ── answer checking ───────────────────────────────────────────────────────
 
-        # Inline feedback
-        self._feedback    = ""
-        self._feedback_t  = 0.0
+    def _check_answer(self, field_key: str, text: str) -> bool:
+        fd     = next(f for f in self._data["dossier_fields"] if f["key"] == field_key)
+        answer = fd["answer"]
+        t      = text.strip()
+        if fd.get("flexible"):
+            for word in answer.lower().split():
+                if len(word) > 3 and word in t.lower():
+                    return True
+            return answer.lower() in t.lower()
+        return answer.lower() == t.lower()
 
-        # Layout pre-computation
-        self._r_header  = pygame.Rect(0, 0, SCREEN_WIDTH, _HEADER_H)
-        self._r_objbar  = pygame.Rect(0, _HEADER_H, SCREEN_WIDTH, _OBJBAR_H)
-        self._r_left    = pygame.Rect(0, _CONTENT_Y, _LEFT_W, _CONTENT_H)
-        self._r_center  = pygame.Rect(_LEFT_W, _CONTENT_Y, _CENTER_W, _CONTENT_H)
-        self._r_right   = pygame.Rect(_LEFT_W + _CENTER_W, _CONTENT_Y, _RIGHT_W, _CONTENT_H)
-        self._r_footer  = pygame.Rect(0, SCREEN_HEIGHT - _FOOTER_H, SCREEN_WIDTH, _FOOTER_H)
-
-        self._build_dossier_layout()
-
-    def _build_dossier_layout(self) -> None:
-        x0 = self._r_right.x + 14
-        w  = self._r_right.w - 28
-        y  = self._r_right.y + 10
-
-        y += self._fh1.get_height()  + 4   # "DOSSIER" title
-        y += self._fsm.get_height()  + 4   # progress line
-        y += self._fsm.get_height()  + 12  # separator + gap
-
-        self._field_rects:  dict[str, pygame.Rect] = {}
-        self._hint_btn_rects: dict[str, pygame.Rect] = {}
-
-        for field in self._data["dossier_fields"]:
-            y += self._fsm.get_height() + 3  # label
-            input_w = w - 32
-            self._field_rects[field["key"]]    = pygame.Rect(x0, y, input_w, 27)
-            self._hint_btn_rects[field["key"]] = pygame.Rect(x0 + input_w + 4, y, 26, 27)
-            y += 27 + 10
-
-        y += 6
-        self._submit_rect = pygame.Rect(x0, y, w, 36)
+    def _submit_field(self, key: str) -> None:
+        text = self._inputs[key].strip()
+        if not text:
+            return
+        fd      = next(f for f in self._data["dossier_fields"] if f["key"] == key)
+        correct = self._check_answer(key, text)
+        self._results[key] = correct
+        if correct:
+            if fd.get("easter_egg"):
+                self.game.save.set_artefact(
+                    self._data["easter_egg_artefact_key"], text
+                )
+            self.game.audio.play("success")
+        else:
+            self._inputs[key] = ""
+            self.game.audio.play("error")
+        self._active = None
 
     # ── events ────────────────────────────────────────────────────────────────
 
     def handle_event(self, event: pygame.event.Event) -> None:
-        if self._submitted:
-            return
-
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:
-                self._handle_click(event.pos)
-            elif event.button == 4:
-                self._scroll[self._active_pid] = max(
-                    0, self._scroll[self._active_pid] - 28)
-            elif event.button == 5:
-                self._scroll[self._active_pid] = min(
-                    self._scroll[self._active_pid] + 28,
-                    self._max_scroll(self._active_pid))
-
-        elif event.type == pygame.KEYDOWN:
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self._handle_click(event.pos)
+        if event.type == pygame.KEYDOWN:
             self._handle_key(event)
 
     def _handle_click(self, pos: tuple) -> None:
-        # Platform tabs
-        if self._r_left.collidepoint(pos):
-            tab_h = _CONTENT_H // len(self._platforms)
-            for i, pid in enumerate(self._platforms):
-                r = pygame.Rect(self._r_left.x,
-                                self._r_left.y + i * tab_h,
-                                self._r_left.w, tab_h)
-                if r.collidepoint(pos):
-                    self._active_pid = pid
-                    return
+        # Tabs
+        for i, r in enumerate(self._tab_rects):
+            if r.collidepoint(pos):
+                self._tab = i
+                self._active = None
+                self.game.audio.play("click")
+                return
 
-        if self._r_right.collidepoint(pos):
-            self._active_key = None
+        # Input field activation
+        for fd in self._data["dossier_fields"]:
+            key = fd["key"]
+            if self._input_rects.get(key, pygame.Rect(0, 0, 0, 0)).collidepoint(pos):
+                if self._results[key] is not True:
+                    if self._results[key] is False:
+                        self._results[key] = None   # reset so player can retype
+                    self._active = key
+                    self.game.audio.play("click")
+                return
 
-            # Hint buttons
-            for key, rect in self._hint_btn_rects.items():
-                if rect.collidepoint(pos):
-                    self._request_hint(key)
-                    return
+        # Submit (GO) / Retry button
+        for fd in self._data["dossier_fields"]:
+            key = fd["key"]
+            if self._submit_rects.get(key, pygame.Rect(0, 0, 0, 0)).collidepoint(pos):
+                if self._results[key] is False:
+                    # RETRY: clear error state and focus the field
+                    self._results[key] = None
+                    self._active = key
+                    self.game.audio.play("click")
+                else:
+                    self._submit_field(key)
+                return
 
-            # Input fields
-            for key, rect in self._field_rects.items():
-                if rect.collidepoint(pos):
-                    self._active_key = key
-                    return
+        # Hint button
+        for fd in self._data["dossier_fields"]:
+            key = fd["key"]
+            if self._hint_rects.get(key, pygame.Rect(0, 0, 0, 0)).collidepoint(pos):
+                if not self._hint_visible[key]:
+                    self._hint_visible[key] = True
+                else:
+                    self._hints[key] = min(self._hints[key] + 1, len(fd["hints"]) - 1)
+                self.game.audio.play("click")
+                return
 
-            # Submit
-            if self._submit_rect.collidepoint(pos):
-                self._do_submit()
+        self._active = None
 
     def _handle_key(self, event: pygame.event.Event) -> None:
-        if self._active_key is None:
+        if not self._active:
             return
         k = event.key
         if k == pygame.K_BACKSPACE:
-            self._inputs[self._active_key] = self._inputs[self._active_key][:-1]
-        elif k == pygame.K_TAB:
-            keys = [f["key"] for f in self._data["dossier_fields"]]
-            idx  = keys.index(self._active_key)
-            self._active_key = keys[(idx + 1) % len(keys)]
-        elif k == pygame.K_RETURN:
-            self._active_key = None
+            self._inputs[self._active] = self._inputs[self._active][:-1]
+        elif k in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self._submit_field(self._active)
         elif event.unicode and event.unicode.isprintable():
-            if len(self._inputs[self._active_key]) < 60:
-                self._inputs[self._active_key] += event.unicode
-
-    def _request_hint(self, key: str) -> None:
-        level = self._hint_level[key]
-        if level >= 2:
-            self._set_feedback("No more hints for this field.")
-            return
-        self._hint_level[key] += 1
-        self._hint_score_penalty += 15
-        field = next(f for f in self._data["dossier_fields"] if f["key"] == key)
-        hint  = field["hints"][level]
-        self._set_feedback(f"Hint: {hint}  (-15 pts)")
-
-    def _do_submit(self) -> None:
-        if all(v.strip() == "" for v in self._inputs.values()):
-            self._set_feedback("Fill in at least one field before submitting.")
-            return
-
-        score = 0
-        for field in self._data["dossier_fields"]:
-            key     = field["key"]
-            entered = self._inputs[key].strip().lower()
-            correct = field["answer"].lower()
-
-            if not entered:
-                self._results[key] = False
-                continue
-
-            if field.get("flexible"):
-                keywords = [w for w in correct.split() if len(w) > 3]
-                hit = any(kw in entered for kw in keywords)
-            else:
-                hit = entered == correct or correct in entered
-
-            self._results[key] = hit
-            if hit:
-                score += self._data["score_per_field"]
-                if field.get("easter_egg"):
-                    self.game.save.set_artefact(
-                        self._data["easter_egg_artefact_key"],
-                        self._inputs[key].strip(),
-                    )
-
-        self._score     = max(0, score - self._hint_score_penalty)
-        self._submitted = True
-
-    def _set_feedback(self, msg: str, duration: float = 3.5) -> None:
-        self._feedback   = msg
-        self._feedback_t = duration
+            if len(self._inputs[self._active]) < 40:
+                self._inputs[self._active] += event.unicode
 
     # ── update ────────────────────────────────────────────────────────────────
 
     def update(self, dt: float) -> None:
+        self._time     += dt
         self._cursor_t += dt
         if self._cursor_t >= 0.5:
             self._cursor_on = not self._cursor_on
             self._cursor_t  = 0.0
 
-        if self._feedback_t > 0:
-            self._feedback_t -= dt
+        # Room completes when all fields are correct
+        if all(self._results.get(f["key"]) is True
+               for f in self._data["dossier_fields"]):
+            self._score    = sum(
+                self._data["score_per_field"]
+                for f in self._data["dossier_fields"]
+                if self._results.get(f["key"])
+            )
+            self._complete = True
 
-        if self._submitted:
-            self._result_t += dt
-            if self._result_t >= self._data["result_display_seconds"]:
-                self._complete = True
-
-    @property
-    def is_complete(self) -> bool:
-        return self._complete
-
-    def get_score(self) -> int:
-        return self._score
-
-    # ── draw ─────────────────────────────────────────────────────────────────
+    # ── draw — top level ──────────────────────────────────────────────────────
 
     def draw(self, surface: pygame.Surface) -> None:
         surface.fill(BG_DARK)
         self._draw_header(surface)
-        self._draw_objective_bar(surface)
-        self._draw_left(surface)
-        self._draw_center(surface)
-        self._draw_right(surface)
+        self._draw_tabs(surface)
+        pygame.draw.line(surface, BORDER,
+                         (_DIVIDER_X, _HEADER_H), (_DIVIDER_X, _BOTTOM), 1)
+        self._draw_dossier(surface)
+        if   self._tab == 0: self._draw_photo_meta(surface)
+        elif self._tab == 1: self._draw_social_posts(surface)
+        else:                self._draw_username_reuse(surface)
         self._draw_footer(surface)
-        if self._submitted:
-            self._draw_result_overlay(surface)
 
     # ── header ────────────────────────────────────────────────────────────────
 
     def _draw_header(self, surface: pygame.Surface) -> None:
-        pygame.draw.rect(surface, BG_MID, self._r_header)
-        pygame.draw.line(surface, BORDER,
-                         (0, _HEADER_H), (SCREEN_WIDTH, _HEADER_H), 1)
-        title = self._fh1.render(
-            "ROOM 2  //  OSINT INVESTIGATOR", True, ACCENT_CYAN)
-        surface.blit(title, (18, (_HEADER_H - title.get_height()) // 2))
+        pygame.draw.rect(surface, BG_MID, (0, 0, SCREEN_WIDTH, _HEADER_H))
+        pygame.draw.line(surface, BORDER, (0, _HEADER_H), (SCREEN_WIDTH, _HEADER_H), 1)
+        t = self._fh1.render("ROOM 2  //  OSINT INVESTIGATOR", True, ACCENT_CYAN)
+        surface.blit(t, (18, (_HEADER_H - t.get_height()) // 2))
+        h = self._fsm.render("ESC = Rooms  |  M = toggle sound", True, TEXT_MUTED)
+        surface.blit(h, (SCREEN_WIDTH - h.get_width() - 18,
+                         (_HEADER_H - h.get_height()) // 2))
 
-        hint = self._fsm.render(
-            "Browse platforms  ->  fill the dossier  ->  SUBMIT  |  ESC = Rooms  |  [?] = hint",
+    # ── tabs ──────────────────────────────────────────────────────────────────
+
+    def _draw_tabs(self, surface: pygame.Surface) -> None:
+        labels = ["[1]  PHOTO METADATA", "[2]  SOCIAL POSTS", "[3]  USERNAME REUSE"]
+        tab_w  = 248
+        gap    = 10
+        self._tab_rects = []
+        for i, label in enumerate(labels):
+            x = _CONTENT_X + i * (tab_w + gap)
+            r = pygame.Rect(x, _TAB_Y, tab_w, _TAB_H)
+            self._tab_rects.append(r)
+            active = (i == self._tab)
+            pygame.draw.rect(surface, ACCENT_CYAN if active else BG_PANEL, r, border_radius=4)
+            pygame.draw.rect(surface, ACCENT_CYAN if active else BORDER,   r, 1, border_radius=4)
+            ts = self._fsm.render(label, True, BG_DARK if active else TEXT_DIM)
+            surface.blit(ts, ts.get_rect(center=r.center))
+
+    # ── Evidence 1: Photo Metadata ────────────────────────────────────────────
+
+    def _draw_photo_meta(self, surface: pygame.Surface) -> None:
+        photo = self._data["photo"]
+        y     = _CONTENT_Y
+        x     = _CONTENT_X
+
+        # Left: photo placeholder card
+        ph_w, ph_h = 258, 186
+        ph_r = pygame.Rect(x, y, ph_w, ph_h)
+        pygame.draw.rect(surface, (10, 14, 26), ph_r, border_radius=5)
+        pygame.draw.rect(surface, BORDER, ph_r, 1, border_radius=5)
+        ico = self._fmono.render("[  JPG  ]", True, TEXT_MUTED)
+        surface.blit(ico, ico.get_rect(center=(ph_r.centerx, ph_r.centery - 22)))
+        fn = self._fsm.render(photo["filename"], True, TEXT_DIM)
+        surface.blit(fn, fn.get_rect(centerx=ph_r.centerx, y=ph_r.centery))
+        cap = self._fxs.render(photo["caption"], True, TEXT_MUTED)
+        surface.blit(cap, cap.get_rect(centerx=ph_r.centerx, y=ph_r.bottom - 20))
+
+        tip = self._fxs.render(
+            "This photo was posted publicly. EXIF metadata is still attached.", True, ACCENT_CYAN
+        )
+        surface.blit(tip, (x, ph_r.bottom + 8))
+
+        # Right: EXIF table
+        ex = x + ph_w + 18
+        ey = y
+        ew = _DIVIDER_X - ex - 10
+
+        hdr_r = pygame.Rect(ex, ey, ew, 26)
+        pygame.draw.rect(surface, BG_PANEL, hdr_r, border_radius=3)
+        exif_lbl = self._fbody.render("EXIF METADATA", True, ACCENT_CYAN)
+        surface.blit(exif_lbl, (ex + 10, ey + 5))
+        ey += hdr_r.h + 3
+
+        kw         = int(ew * 0.38)
+        row_h      = 28
+        highlights = photo.get("highlight_rows", set())
+
+        for idx, (key, val) in enumerate(photo["metadata"]):
+            row_r = pygame.Rect(ex, ey, ew, row_h)
+            hi    = idx in highlights
+            if hi:
+                pygame.draw.rect(surface, (0, 38, 58), row_r, border_radius=2)
+                pygame.draw.rect(surface, ACCENT_CYAN, row_r, 1, border_radius=2)
+            else:
+                bg = BG_MID if idx % 2 == 0 else BG_PANEL
+                pygame.draw.rect(surface, bg, row_r, border_radius=2)
+
+            col = ACCENT_CYAN if hi else TEXT_MUTED
+            vc  = ACCENT_CYAN if hi else TEXT_DIM
+            ky  = row_r.centery - self._fsm.get_height() // 2
+            surface.blit(self._fsm.render(key, True, col),  (ex + 10, ky))
+            surface.blit(self._fmono.render(val, True, vc), (ex + kw + 10, ky))
+            pygame.draw.line(surface, BORDER,
+                             (ex + kw + 4, ey), (ex + kw + 4, ey + row_h), 1)
+            ey += row_h + 2
+
+        note = self._fxs.render(
+            "The Location and Timezone fields reveal where and when the photo was taken.",
             True, TEXT_MUTED,
         )
-        surface.blit(hint, (SCREEN_WIDTH - hint.get_width() - 18,
-                            (_HEADER_H - hint.get_height()) // 2))
+        surface.blit(note, (ex, ey + 8))
 
-    # ── objective bar ─────────────────────────────────────────────────────────
+    # ── Evidence 2: Social Posts ──────────────────────────────────────────────
 
-    def _draw_objective_bar(self, surface: pygame.Surface) -> None:
-        pygame.draw.rect(surface, (12, 16, 28), self._r_objbar)
-        pygame.draw.line(surface, BORDER,
-                         (0, self._r_objbar.bottom),
-                         (SCREEN_WIDTH, self._r_objbar.bottom), 1)
+    def _draw_social_posts(self, surface: pygame.Surface) -> None:
+        y  = _CONTENT_Y
+        x  = _CONTENT_X
 
-        label = self._fsm.render("FIND:", True, TEXT_MUTED)
-        x = 18
-        y = self._r_objbar.y + (self._r_objbar.h - label.get_height()) // 2
-        surface.blit(label, (x, y))
-        x += label.get_width() + 12
+        intro = self._fxs.render(
+            "The investigation target is active across multiple platforms. All posts are publicly visible.",
+            True, TEXT_MUTED,
+        )
+        surface.blit(intro, (x, y))
+        y += intro.get_height() + 10
 
-        for field in self._data["dossier_fields"]:
-            key     = field["key"]
-            filled  = bool(self._inputs[key].strip())
-            correct = self._results.get(key, None)
-
-            if correct is True:
-                col, prefix = ACCENT_GREEN, "[OK] "
-            elif correct is False:
-                col, prefix = ACCENT_RED, "[X]  "
-            elif filled:
-                col, prefix = ACCENT_YELLOW, "[?]  "
-            else:
-                col, prefix = TEXT_DIM, "[ ]  "
-
-            tag = self._fsm.render(prefix + field["label"], True, col)
-            if x + tag.get_width() > SCREEN_WIDTH - 100:
+        for platform in self._data["social_platforms"]:
+            if y > _BOTTOM - 48:
                 break
-            surface.blit(tag, (x, y))
-            x += tag.get_width() + 18
 
-        # Hint penalty indicator
-        if self._hint_score_penalty > 0:
-            pen = self._fsm.render(
-                f"Hint penalty: -{self._hint_score_penalty} pts", True, ACCENT_ORANGE
-            )
-            surface.blit(pen, (SCREEN_WIDTH - pen.get_width() - 18, y))
+            ph_r = pygame.Rect(x, y, _EV_W, 32)
+            r, g, b = platform["color"]
+            pygame.draw.rect(surface, (r // 5, g // 5, b // 5), ph_r, border_radius=4)
+            pygame.draw.rect(surface, platform["color"], ph_r, 1, border_radius=4)
+            pn = self._fbody.render(platform["name"], True, platform["color"])
+            surface.blit(pn, (x + 10, ph_r.centery - pn.get_height() // 2))
+            hn = self._fsm.render(platform["handle"], True, TEXT_DIM)
+            surface.blit(hn, (x + 10 + pn.get_width() + 14,
+                               ph_r.centery - hn.get_height() // 2))
+            if platform["display_name"] != platform["handle"]:
+                dn = self._fsm.render(f"  ({platform['display_name']})", True, TEXT_MUTED)
+                surface.blit(dn, (x + 10 + pn.get_width() + 14 + hn.get_width(),
+                                  ph_r.centery - dn.get_height() // 2))
+            y += ph_r.h + 2
 
-    # ── left: platform tabs ───────────────────────────────────────────────────
+            for post in platform["posts"]:
+                if y > _BOTTOM - 36:
+                    break
+                lines  = self._wrap(post["text"], self._fsm, _EV_W - 24)
+                card_h = max(44, len(lines) * (self._fsm.get_height() + 2) + 20)
+                card_r = pygame.Rect(x, y, _EV_W, card_h)
+                hi     = post.get("highlight", False)
+                if hi:
+                    pygame.draw.rect(surface, (0, 38, 16), card_r, border_radius=3)
+                    pygame.draw.rect(surface, ACCENT_GREEN, card_r, 1, border_radius=3)
+                else:
+                    pygame.draw.rect(surface, BG_MID, card_r, border_radius=3)
+                    pygame.draw.rect(surface, BORDER, card_r, 1, border_radius=3)
+                tc = TEXT_PRIMARY if hi else TEXT_DIM
+                ty = y + 8
+                for line in lines:
+                    ls = self._fsm.render(line, True, tc)
+                    surface.blit(ls, (x + 10, ty))
+                    ty += ls.get_height() + 2
+                ts = self._fxs.render(
+                    post["timestamp"], True, ACCENT_GREEN if hi else TEXT_MUTED
+                )
+                surface.blit(ts, (x + _EV_W - ts.get_width() - 10,
+                                  y + card_h - ts.get_height() - 6))
+                y += card_h + 3
+            y += 10
 
-    def _draw_left(self, surface: pygame.Surface) -> None:
-        pygame.draw.rect(surface, BG_MID, self._r_left)
-        pygame.draw.line(surface, BORDER,
-                         (_LEFT_W, _CONTENT_Y), (_LEFT_W, SCREEN_HEIGHT - _FOOTER_H), 1)
+    # ── Evidence 3: Username Reuse ────────────────────────────────────────────
 
-        tab_h   = _CONTENT_H // len(self._platforms)
-        mx, my  = pygame.mouse.get_pos()
+    def _draw_username_reuse(self, surface: pygame.Surface) -> None:
+        y  = _CONTENT_Y
+        x  = _CONTENT_X
 
-        for i, pid in enumerate(self._platforms):
-            plat   = self._data["platforms"][pid]
-            r      = pygame.Rect(self._r_left.x,
-                                 self._r_left.y + i * tab_h,
-                                 self._r_left.w, tab_h)
-            active  = pid == self._active_pid
-            hovered = r.collidepoint(mx, my)
-
-            fill = BG_PANEL if active else (BG_MID if not hovered else (18, 24, 42))
-            pygame.draw.rect(surface, fill, r)
-            if active:
-                pygame.draw.rect(surface, tuple(plat["color"]),
-                                 pygame.Rect(r.x, r.y, 4, r.h))
-
-            col   = TEXT_PRIMARY if active else TEXT_DIM
-            label = self._fbody.render(plat["label"], True, col)
-            surface.blit(label, (r.x + 10, r.centery - label.get_height() // 2))
-            pygame.draw.line(surface, BORDER, (r.x, r.bottom - 1), (r.right, r.bottom - 1), 1)
-
-    # ── center: profile + posts ───────────────────────────────────────────────
-
-    def _draw_center(self, surface: pygame.Surface) -> None:
-        pygame.draw.rect(surface, BG_DARK, self._r_center)
-
-        pid    = self._active_pid
-        plat   = self._data["platforms"][pid]
-        scroll = self._scroll[pid]
-
-        clip = surface.get_clip()
-        surface.set_clip(self._r_center)
-
-        x0 = self._r_center.x + 14
-        y  = self._r_center.y + 10 - scroll
-
-        y = self._draw_profile_card(surface, plat, x0, y)
-        y += 12
-
-        for post in plat.get("posts", []):
-            y = self._draw_post(surface, post, x0, y, plat["color"])
-            y += 8
-
-        surface.set_clip(clip)
-
-        # Scroll shadow at top
-        if scroll > 0:
-            shadow = pygame.Surface((_CENTER_W, 20), pygame.SRCALPHA)
-            for i in range(20):
-                a = int(140 * (1 - i / 20))
-                pygame.draw.line(shadow, (8, 10, 18, a), (0, i), (_CENTER_W, i))
-            surface.blit(shadow, (self._r_center.x, self._r_center.y))
-
-    def _draw_profile_card(self, surface: pygame.Surface,
-                           plat: dict, x: int, y: int) -> int:
-        profile = plat["profile"]
-        w       = self._r_center.w - 28
-        rows: list[tuple] = []
-
-        if "display_name" in profile:
-            rows.append((profile["display_name"], self._fh1, TEXT_PRIMARY))
-        if "handle" in profile:
-            rows.append((profile["handle"], self._fsm, TEXT_DIM))
-        if "headline" in profile:
-            rows.append((profile["headline"], self._fbody, ACCENT_CYAN))
-        if profile.get("bio"):
-            rows.append((profile["bio"], self._fsm, TEXT_DIM))
-        if profile.get("location"):
-            rows.append(("Location: " + profile["location"], self._fsm, ACCENT_GREEN))
-        if profile.get("employer"):
-            rows.append(("Employer: " + profile["employer"], self._fsm, ACCENT_GREEN))
-        if profile.get("joined"):
-            rows.append((profile["joined"], self._fsm, TEXT_MUTED))
-        for exp in profile.get("experience", []):
-            if not isinstance(exp, dict):
-                continue
-            rows.append((
-                f"  {exp.get('title','?')}  @  {exp.get('company','?')}  ({exp.get('duration','?')})",
-                self._fsm, TEXT_DIM,
-            ))
-        for edu in profile.get("education", []):
-            if not isinstance(edu, dict):
-                continue
-            rows.append((
-                f"  {edu.get('degree','?')}  -  {edu.get('institution','?')}  ({edu.get('year','?')})",
-                self._fsm, TEXT_MUTED,
-            ))
-
-        gap   = 3
-        card_h = sum(f.get_height() + gap for _, f, _ in rows) + 22
-        card   = pygame.Rect(x, y, w, card_h)
-        pygame.draw.rect(surface, BG_PANEL, card, border_radius=6)
-        pygame.draw.rect(surface, tuple(plat["color"]), card, 1, border_radius=6)
-
-        cy = y + 11
-        for text, font, col in rows:
-            s = font.render(text, True, col)
-            surface.blit(s, (x + 12, cy))
-            cy += font.get_height() + gap
-
-        return y + card_h
-
-    def _draw_post(self, surface: pygame.Surface,
-                   post: dict, x: int, y: int, color: tuple) -> int:
-        w      = self._r_center.w - 28
-        lines  = self._wrap(post["text"], self._fbody, w - 24)
-        card_h = (len(lines) * (self._fbody.get_height() + 2)
-                  + self._fsm.get_height() + 22)
-
-        # Subtle glow border on posts that contain a clue key — helps players notice them
-        ck      = post.get("clue_key", "")
-        has_hit = ck and self._results.get(ck) is True
-        border  = ACCENT_GREEN if has_hit else BORDER
-
-        card = pygame.Rect(x, y, w, card_h)
-        pygame.draw.rect(surface, BG_MID, card, border_radius=4)
-        pygame.draw.rect(surface, border, card, 1, border_radius=4)
-
-        cy = y + 10
-        for line in lines:
-            s = self._fbody.render(line, True, TEXT_PRIMARY)
-            surface.blit(s, (x + 12, cy))
-            cy += self._fbody.get_height() + 2
-
-        ts = self._fsm.render(post["timestamp"], True, TEXT_MUTED)
-        surface.blit(ts, (x + 12, cy + 4))
-
-        return y + card_h
-
-    # ── right: dossier ────────────────────────────────────────────────────────
-
-    def _draw_right(self, surface: pygame.Surface) -> None:
-        pygame.draw.rect(surface, BG_MID, self._r_right)
-        pygame.draw.line(surface, BORDER,
-                         (self._r_right.x, _CONTENT_Y),
-                         (self._r_right.x, SCREEN_HEIGHT - _FOOTER_H), 1)
-
-        x0 = self._r_right.x + 14
-        y  = self._r_right.y + 10
-
-        # Title
-        title = self._fh1.render("DOSSIER", True, ACCENT_ORANGE)
-        surface.blit(title, (x0, y))
+        title = self._fbody.render(
+            "SAME USERNAME DETECTED ACROSS PLATFORMS", True, ACCENT_ORANGE
+        )
+        surface.blit(title, (x, y))
         y += title.get_height() + 4
 
-        # Progress
-        filled_count = sum(1 for v in self._inputs.values() if v.strip())
-        prog = self._fsm.render(
-            f"Fields filled:  {filled_count} / {len(self._data['dossier_fields'])}",
-            True, ACCENT_GREEN if filled_count > 0 else TEXT_MUTED,
+        sub = self._fxs.render(
+            "When the same handle appears on multiple platforms, all activity can be linked to one person.",
+            True, TEXT_DIM,
         )
-        surface.blit(prog, (x0, y))
-        y += prog.get_height() + 4
+        surface.blit(sub, (x, y))
+        y += sub.get_height() + 16
 
+        accounts = self._data["username_accounts"]
+        n        = len(accounts)
+        card_w   = (_EV_W - (n - 1) * 12) // n
+        card_h   = 148
+        card_y   = y
+
+        for i, acc in enumerate(accounts):
+            cx = x + i * (card_w + 12)
+            cr = pygame.Rect(cx, card_y, card_w, card_h)
+            r, g, b = acc["color"]
+            pygame.draw.rect(surface, (r // 6, g // 6, b // 6), cr, border_radius=6)
+            pygame.draw.rect(surface, acc["color"], cr, 2, border_radius=6)
+
+            pn = self._fbody.render(acc["platform"], True, acc["color"])
+            surface.blit(pn, pn.get_rect(centerx=cr.centerx, y=cr.y + 12))
+
+            hn = self._fmono.render(acc["handle"], True, TEXT_PRIMARY)
+            if hn.get_width() > card_w - 14:
+                hn = self._fxs.render(acc["handle"], True, TEXT_PRIMARY)
+            surface.blit(hn, hn.get_rect(centerx=cr.centerx, y=cr.y + 46))
+
+            pygame.draw.line(surface, acc["color"],
+                             (cr.x + 10, cr.y + 82), (cr.right - 10, cr.y + 82), 1)
+
+            dn = self._fxs.render(acc["real_name"], True, TEXT_DIM)
+            surface.blit(dn, dn.get_rect(centerx=cr.centerx, y=cr.y + 90))
+
+        # Bracket connector
+        bracket_y = card_y + card_h + 12
+        pts_x     = [x + i * (card_w + 12) + card_w // 2 for i in range(n)]
+        pygame.draw.line(surface, ACCENT_ORANGE,
+                         (pts_x[0], bracket_y), (pts_x[-1], bracket_y), 2)
+        for px in pts_x:
+            pygame.draw.line(surface, ACCENT_ORANGE,
+                             (px, card_y + card_h + 2), (px, bracket_y), 2)
+            pygame.draw.circle(surface, ACCENT_ORANGE, (px, bracket_y), 4)
+
+        mid_x = (pts_x[0] + pts_x[-1]) // 2
+        msg   = self._fbody.render(
+            "These accounts belong to the same person.", True, ACCENT_ORANGE
+        )
+        surface.blit(msg, msg.get_rect(centerx=mid_x, y=bracket_y + 10))
+
+        ey = bracket_y + msg.get_height() + 26
+        for line in [
+            "Investigators cross-reference usernames to link activity across the internet.",
+            "Even without real names, a unique handle connects every post to one individual.",
+        ]:
+            ls = self._fxs.render(line, True, TEXT_DIM)
+            surface.blit(ls, (x, ey))
+            ey += ls.get_height() + 4
+
+    # ── Dossier panel ─────────────────────────────────────────────────────────
+
+    def _draw_dossier(self, surface: pygame.Surface) -> None:
+        dx = _DOSSIER_X
+        dw = _DOSSIER_W
+
+        pygame.draw.rect(surface, BG_PANEL,
+                         pygame.Rect(dx, _HEADER_H, dw, _BOTTOM - _HEADER_H))
+
+        hdr = self._fbody.render("TARGET DOSSIER", True, ACCENT_CYAN)
+        surface.blit(hdr, (dx + 8, _HEADER_H + 8))
         pygame.draw.line(surface, BORDER,
-                         (x0, y), (self._r_right.right - 14, y), 1)
-        y += 12
+                         (dx, _HEADER_H + 30), (dx + dw, _HEADER_H + 30), 1)
 
-        # Fields
+        self._input_rects  = {}
+        self._submit_rects = {}
+        self._hint_rects   = {}
         mx, my = pygame.mouse.get_pos()
-        for field in self._data["dossier_fields"]:
-            key    = field["key"]
-            rect   = self._field_rects[key]
-            hrect  = self._hint_btn_rects[key]
-            active = self._active_key == key
-            level  = self._hint_level[key]
 
-            label_col = TEXT_DIM if not self._results.get(key) else ACCENT_GREEN
-            label = self._fsm.render(field["label"], True, label_col)
-            surface.blit(label, (x0, rect.y - self._fsm.get_height() - 3))
+        for i, fd in enumerate(self._data["dossier_fields"]):
+            key    = fd["key"]
+            result = self._results[key]
+            active = self._active == key
+            fy     = _DOSSIER_BASE_Y + i * _SLOT_H
+
+            # Label
+            lbl_col = (ACCENT_GREEN if result is True  else
+                       ACCENT_RED   if result is False else
+                       TEXT_MUTED)
+            surface.blit(
+                self._fsm.render(fd["label"] + ":", True, lbl_col),
+                (dx + 8, fy),
+            )
 
             # Input box
-            pygame.draw.rect(surface, BG_DARK, rect, border_radius=3)
-            pygame.draw.rect(surface,
-                             ACCENT_CYAN if active else BORDER,
-                             rect, 1, border_radius=3)
+            inp_w = dw - 58
+            inp_r = pygame.Rect(dx + 8, fy + 18, inp_w, 30)
+            self._input_rects[key] = inp_r
 
-            val     = self._inputs[key]
-            display = val + ("|" if active and self._cursor_on else "")
-            ts      = self._finput.render(display, True, TEXT_PRIMARY)
-            surface.blit(ts, (rect.x + 6,
-                               rect.y + (rect.h - ts.get_height()) // 2))
-
-            # Hint button [?]
-            hint_hov = hrect.collidepoint(mx, my)
-            hcol     = ACCENT_ORANGE if level < 2 else TEXT_MUTED
-            hbg      = (40, 22, 0) if hint_hov and level < 2 else BG_PANEL
-            pygame.draw.rect(surface, hbg, hrect, border_radius=3)
-            pygame.draw.rect(surface, hcol, hrect, 1, border_radius=3)
-            hs = self._fsm.render("?", True, hcol)
-            surface.blit(hs, hs.get_rect(center=hrect.center))
-
-        # Submit
-        sub_hov  = self._submit_rect.collidepoint(mx, my)
-        sub_fill = (0, 60, 32) if sub_hov else BG_PANEL
-        pygame.draw.rect(surface, sub_fill, self._submit_rect, border_radius=4)
-        pygame.draw.rect(surface, ACCENT_GREEN, self._submit_rect, 2, border_radius=4)
-        slbl = self._fbody.render("SUBMIT DOSSIER", True, ACCENT_GREEN)
-        surface.blit(slbl, slbl.get_rect(center=self._submit_rect.center))
-
-        # Inline feedback (hints / errors)
-        if self._feedback and self._feedback_t > 0:
-            alpha  = min(1.0, self._feedback_t / 0.4)
-            fb_col = tuple(int(c * alpha) for c in ACCENT_ORANGE)
-            fb = self._fsm.render(self._feedback, True, fb_col)
-            fy = self._submit_rect.bottom + 8
-            # wrap if too long
-            if fb.get_width() > self._r_right.w - 28:
-                for part in self._wrap(self._feedback, self._fsm, self._r_right.w - 28):
-                    ps = self._fsm.render(part, True, fb_col)
-                    surface.blit(ps, (x0, fy))
-                    fy += ps.get_height() + 2
+            if result is True:
+                fill, bc = (0, 26, 12), ACCENT_GREEN
+            elif result is False:
+                fill, bc = (28, 0, 0), ACCENT_RED
             else:
-                surface.blit(fb, (x0, fy))
+                fill = BG_MID
+                bc   = ACCENT_CYAN if active else BORDER
+
+            pygame.draw.rect(surface, fill, inp_r, border_radius=3)
+            pygame.draw.rect(surface, bc,   inp_r, 1, border_radius=3)
+
+            if result is True:
+                txt = self._fmono.render(self._inputs[key], True, ACCENT_GREEN)
+            elif result is False:
+                txt = self._fmono.render("Try again", True, ACCENT_RED)
+            else:
+                cur = "|" if (active and self._cursor_on) else ""
+                txt = self._fmono.render(self._inputs[key] + cur, True, TEXT_PRIMARY)
+            surface.blit(txt, (inp_r.x + 6, inp_r.centery - txt.get_height() // 2))
+
+            # GO / RETRY button
+            go_r = pygame.Rect(inp_r.right + 4, fy + 18, 44, 30)
+            if result is not True:
+                self._submit_rects[key] = go_r
+                go_h = go_r.collidepoint(mx, my)
+                if result is False:
+                    pygame.draw.rect(surface, (40, 0, 0) if go_h else BG_PANEL, go_r, border_radius=3)
+                    pygame.draw.rect(surface, ACCENT_RED, go_r, 1, border_radius=3)
+                    gol = self._fxs.render("RETRY", True, ACCENT_RED)
+                else:
+                    pygame.draw.rect(surface, (0, 40, 20) if go_h else BG_PANEL, go_r, border_radius=3)
+                    pygame.draw.rect(surface, ACCENT_GREEN, go_r, 1, border_radius=3)
+                    gol = self._fxs.render("GO", True, ACCENT_GREEN)
+                surface.blit(gol, gol.get_rect(center=go_r.center))
+            else:
+                ok = self._fxs.render("[OK]", True, ACCENT_GREEN)
+                surface.blit(ok, (go_r.x + 2, go_r.centery - ok.get_height() // 2))
+
+            # "Incorrect" feedback or Hint button
+            if result is False:
+                err = self._fxs.render("Incorrect — click RETRY or the field to try again.", True, ACCENT_RED)
+                surface.blit(err, (dx + 8, fy + 53))
+                # Hint button shifted down
+                hr = pygame.Rect(dx + 8, fy + 70, 60, 18)
+                self._hint_rects[key] = hr
+                hbh = hr.collidepoint(mx, my)
+                pygame.draw.rect(surface, BG_PANEL, hr, border_radius=2)
+                pygame.draw.rect(surface,
+                                 (255, 180, 0) if hbh else ACCENT_ORANGE,
+                                 hr, 1, border_radius=2)
+                hl = self._fxs.render("? HINT", True, ACCENT_ORANGE)
+                surface.blit(hl, hl.get_rect(center=hr.center))
+            elif result is not True:
+                hr = pygame.Rect(dx + 8, fy + 53, 60, 18)
+                self._hint_rects[key] = hr
+                hbh = hr.collidepoint(mx, my)
+                pygame.draw.rect(surface, BG_PANEL, hr, border_radius=2)
+                pygame.draw.rect(surface,
+                                 (255, 180, 0) if hbh else ACCENT_ORANGE,
+                                 hr, 1, border_radius=2)
+                hl = self._fxs.render("? HINT", True, ACCENT_ORANGE)
+                surface.blit(hl, hl.get_rect(center=hr.center))
+
+            # Hint text
+            hint_y = fy + 92 if result is False else fy + 75
+            if self._hint_visible[key] and result is not True:
+                hints     = fd["hints"]
+                idx       = self._hints[key]
+                hint_text = hints[min(idx, len(hints) - 1)]
+                hy        = hint_y
+                for hline in self._wrap(hint_text, self._fxs, dw - 18):
+                    hs = self._fxs.render(hline, True, ACCENT_ORANGE)
+                    surface.blit(hs, (dx + 8, hy))
+                    hy += hs.get_height() + 2
+
+        # Score
+        score_y = _DOSSIER_BASE_Y + len(self._data["dossier_fields"]) * _SLOT_H + 6
+        pygame.draw.line(surface, BORDER, (dx, score_y), (dx + dw, score_y), 1)
+        score_y += 8
+
+        done_count = sum(1 for f in self._data["dossier_fields"]
+                         if self._results.get(f["key"]) is True)
+        score  = done_count * self._data["score_per_field"]
+        max_sc = self._data["max_score"]
+        sc_col = ACCENT_GREEN if done_count == len(self._data["dossier_fields"]) else TEXT_DIM
+        sc     = self._fbody.render(f"Score:  {score}  /  {max_sc}", True, sc_col)
+        surface.blit(sc, (dx + 8, score_y))
+
+        if done_count == len(self._data["dossier_fields"]):
+            done = self._fsm.render("DOSSIER COMPLETE", True, ACCENT_GREEN)
+            surface.blit(done, (dx + 8, score_y + sc.get_height() + 6))
 
     # ── footer ────────────────────────────────────────────────────────────────
 
     def _draw_footer(self, surface: pygame.Surface) -> None:
-        pygame.draw.rect(surface, BG_MID, self._r_footer)
-        pygame.draw.line(surface, BORDER,
-                         (0, self._r_footer.y),
-                         (SCREEN_WIDTH, self._r_footer.y), 1)
-        tip = self._fsm.render(
-            "Tip: People reveal more online than they realise. "
-            "Look for username reuse, timestamps, location tags, and casual mentions.",
+        pygame.draw.rect(surface, BG_MID, (0, _BOTTOM, SCREEN_WIDTH, _FOOTER_H))
+        pygame.draw.line(surface, BORDER, (0, _BOTTOM), (SCREEN_WIDTH, _BOTTOM), 1)
+        edu = self._fsm.render(
+            "OSINT: Publicly available information can be combined to reveal sensitive details.",
             True, TEXT_MUTED,
         )
-        surface.blit(tip, (18,
-                           self._r_footer.y + (self._r_footer.h - tip.get_height()) // 2))
+        surface.blit(edu, edu.get_rect(
+            centerx=(_CONTENT_X + _DIVIDER_X) // 2,
+            y=_BOTTOM + (_FOOTER_H - edu.get_height()) // 2,
+        ))
 
-    # ── result overlay ────────────────────────────────────────────────────────
-
-    def _draw_result_overlay(self, surface: pygame.Surface) -> None:
-        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 190))
-        surface.blit(overlay, (0, 0))
-
-        cx  = SCREEN_WIDTH  // 2
-        cy  = SCREEN_HEIGHT // 2
-        box = pygame.Rect(cx - 300, cy - 200, 600, 400)
-        pygame.draw.rect(surface, BG_PANEL, box, border_radius=8)
-        pygame.draw.rect(surface, ACCENT_CYAN, box, 2, border_radius=8)
-
-        y = box.y + 22
-        t = self._fh1.render("DOSSIER SUBMITTED", True, ACCENT_CYAN)
-        surface.blit(t, t.get_rect(centerx=cx, y=y));  y += t.get_height() + 8
-
-        s_col = ACCENT_GREEN if self._score > 0 else ACCENT_RED
-        sc    = self._fh1.render(
-            f"Score:  {self._score} / {self._data['max_score']}", True, s_col
-        )
-        surface.blit(sc, sc.get_rect(centerx=cx, y=y));  y += sc.get_height() + 16
-
-        for field in self._data["dossier_fields"]:
-            key = field["key"]
-            hit = self._results.get(key, False)
-            col  = ACCENT_GREEN if hit else ACCENT_RED
-            mark = "[OK]" if hit else "[--]"
-            line = self._fbody.render(f"{mark}  {field['label']}", True, col)
-            surface.blit(line, (box.x + 32, y));  y += line.get_height() + 6
-
-        remaining = max(0.0, self._data["result_display_seconds"] - self._result_t)
-        note = self._fsm.render(
-            f"Returning to rooms in {remaining:.1f}s ...", True, TEXT_MUTED
-        )
-        surface.blit(note, note.get_rect(centerx=cx, y=box.bottom - 32))
-
-    # ── helpers ───────────────────────────────────────────────────────────────
-
-    def _max_scroll(self, pid: str) -> int:
-        plat = self._data["platforms"][pid]
-        h    = 240 + len(plat.get("posts", [])) * 130 + 30
-        return max(0, h - _CONTENT_H)
+    # ── util ──────────────────────────────────────────────────────────────────
 
     @staticmethod
     def _wrap(text: str, font: pygame.font.Font, max_w: int) -> list[str]:

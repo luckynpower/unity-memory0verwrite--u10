@@ -1,6 +1,5 @@
 {
   "cleared_rooms": {
-    "osint": 300,
     "password": 400
   },
   "artefacts": {}
