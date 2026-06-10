@@ -52,7 +52,6 @@ PUZZLE: dict = {
                 "bio":          "Working in tech, based in London. Coffee and cats.",
                 "location":     "London, UK",
                 "employer":     "TechVault Solutions",
-                "education":    "University of Edinburgh",
                 "joined":       "Member since 2018",
             },
             "posts": [

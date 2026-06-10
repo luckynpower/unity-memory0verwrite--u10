@@ -73,9 +73,45 @@ def _fragment_fanfare() -> pygame.mixer.Sound:
     for i in range(n):
         t  = i / _SR
         progress = t / duration
-        freq = 220 + 660 * (progress ** 1.5)   # accelerating rise
+        freq = 220 + 660 * (progress ** 1.5)
         env  = min(1.0, i / (_SR * 0.04)) * min(1.0, (n - i) / (_SR * 0.15))
         val  = int(32767 * 0.38 * env * math.sin(2 * math.pi * freq * t))
+        val  = max(-32767, min(32767, val))
+        buf.append(val)
+        buf.append(val)
+    return pygame.mixer.Sound(buffer=buf)
+
+
+def _crack_sound() -> pygame.mixer.Sound:
+    """Short punchy ascending sweep — password cracked."""
+    duration = 0.28
+    n = int(_SR * duration)
+    buf = array.array("h")
+    for i in range(n):
+        t    = i / _SR
+        prog = t / duration
+        freq = 280 + 620 * (prog ** 0.6)
+        env  = min(1.0, i / max(1, int(_SR * 0.01))) * min(1.0, (n - i) / max(1, int(_SR * 0.06)))
+        val  = int(32767 * 0.42 * env * math.sin(2 * math.pi * freq * t))
+        val  = max(-32767, min(32767, val))
+        buf.append(val)
+        buf.append(val)
+    return pygame.mixer.Sound(buffer=buf)
+
+
+def _room_enter_sound() -> pygame.mixer.Sound:
+    """Low-to-mid sweep — entering a room."""
+    duration = 0.32
+    n = int(_SR * duration)
+    buf = array.array("h")
+    for i in range(n):
+        t    = i / _SR
+        prog = t / duration
+        f1   = 110 + 340 * prog
+        f2   = 220 + 680 * prog
+        env  = min(1.0, i / max(1, int(_SR * 0.012))) * min(1.0, (n - i) / max(1, int(_SR * 0.09)))
+        wave = 0.6 * math.sin(2 * math.pi * f1 * t) + 0.4 * math.sin(2 * math.pi * f2 * t)
+        val  = int(32767 * 0.35 * env * wave)
         val  = max(-32767, min(32767, val))
         buf.append(val)
         buf.append(val)
@@ -95,12 +131,14 @@ class AudioManager:
             if not pygame.mixer.get_init():
                 pygame.mixer.init(frequency=_SR, size=-16, channels=2, buffer=512)
             self._sounds = {
-                "click":    _tone(820,  0.07, volume=0.40),
-                "hover":    _tone(620,  0.04, volume=0.18),
-                "error":    _tone(180,  0.22, volume=0.32),
-                "type":     _tone(1100, 0.028, volume=0.12),
-                "success":  _chord([523, 659, 784], 0.55, volume=0.38),
-                "fragment": _fragment_fanfare(),
+                "click":      _tone(820,  0.07,  volume=0.40),
+                "hover":      _tone(620,  0.04,  volume=0.18),
+                "error":      _tone(180,  0.22,  volume=0.32),
+                "type":       _tone(1100, 0.028, volume=0.12),
+                "success":    _chord([523, 659, 784], 0.55, volume=0.38),
+                "fragment":   _fragment_fanfare(),
+                "crack":      _crack_sound(),
+                "room_enter": _room_enter_sound(),
             }
             self._ambient_sound = _ambient()
             self._ok = True

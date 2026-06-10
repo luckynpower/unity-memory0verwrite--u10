@@ -13,6 +13,7 @@ ACCENT_CYAN   = (0,   200, 255)
 ACCENT_RED    = (255, 55,  75)
 ACCENT_ORANGE = (255, 155, 0)
 ACCENT_YELLOW = (255, 220, 0)
+ACCENT_GOLD   = (195, 148, 0)   # recovered memory / cleared state
 TEXT_PRIMARY  = (210, 225, 255)
 TEXT_DIM      = (95,  115, 160)
 TEXT_MUTED    = (50,  65,  100)

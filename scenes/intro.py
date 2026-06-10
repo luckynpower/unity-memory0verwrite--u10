@@ -4,7 +4,9 @@ Two-page intro scene.
   Page 1 — How-to-play briefing (static).
 SPACE / ENTER skips the typewriter on page 0.
 """
+import math
 import pygame
+import core.fx as fx
 from scenes.base_scene import BaseScene
 from core.settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT,
@@ -105,6 +107,9 @@ class Intro(BaseScene):
                 len(self._full_text),
                 self._char_index + _CHARS_PER_SEC * dt,
             )
+            # Auto-complete: show CONTINUE button as soon as typewriter finishes
+            if self._char_index >= len(self._full_text):
+                self._skip = True
         mx, my = pygame.mouse.get_pos()
         self._btn_hover = self._get_btn_rect().collidepoint(mx, my)
 
@@ -117,6 +122,7 @@ class Intro(BaseScene):
         else:
             self._draw_howto(surface)
         self._draw_button(surface)
+        fx.scanlines(surface, alpha=22)
 
     def _draw_story(self, surface: pygame.Surface) -> None:
         visible = self._full_text if self._skip else self._full_text[:int(self._char_index)]
@@ -181,22 +187,42 @@ class Intro(BaseScene):
 
     def _draw_button(self, surface: pygame.Surface) -> None:
         r = self._get_btn_rect()
-        if self._page == 0 and not self._skip:
-            label = "SKIP INTRO"
-            col   = TEXT_MUTED
-            border_col = BORDER
-        elif self._page == 0:
-            label = "CONTINUE  >"
-            col   = ACCENT_CYAN if self._btn_hover else TEXT_DIM
-            border_col = ACCENT_CYAN if self._btn_hover else BORDER
-        else:
-            label = "ENTER THE SYSTEM  >"
-            col   = ACCENT_GREEN if self._btn_hover else TEXT_DIM
-            border_col = ACCENT_GREEN if self._btn_hover else BORDER
 
-        pygame.draw.rect(surface, BG_PANEL, r, border_radius=4)
+        if self._page == 1:
+            # "ENTER THE SYSTEM" — green, pulsing
+            active_col = ACCENT_GREEN
+            label      = "ENTER THE SYSTEM  >"
+        elif self._skip:
+            # Typewriter done — prominent CONTINUE button
+            active_col = ACCENT_CYAN
+            label      = "CONTINUE  >"
+        else:
+            # Typewriter still running — dim SKIP hint
+            pygame.draw.rect(surface, BG_PANEL, r, border_radius=4)
+            pygame.draw.rect(surface, BORDER,   r, 1, border_radius=4)
+            txt = self._font_btn.render("SKIP INTRO", True, TEXT_MUTED)
+            surface.blit(txt, txt.get_rect(center=r.center))
+            return
+
+        pulse      = 0.65 + 0.35 * abs(math.sin(self._time * 2.5))
+        r0, g0, b0 = BORDER
+        ra, ga, ba = active_col
+        border_col = (
+            active_col if self._btn_hover else
+            (int(r0 + (ra - r0) * pulse),
+             int(g0 + (ga - g0) * pulse),
+             int(b0 + (ba - b0) * pulse))
+        )
+        fill = (
+            (0, 52, 30) if (self._btn_hover and active_col == ACCENT_GREEN) else
+            (0, 30, 52) if (self._btn_hover and active_col == ACCENT_CYAN) else
+            BG_PANEL
+        )
+        text_col = active_col if self._btn_hover else TEXT_PRIMARY
+
+        pygame.draw.rect(surface, fill,       r, border_radius=4)
         pygame.draw.rect(surface, border_col, r, 2, border_radius=4)
-        txt = self._font_btn.render(label, True, col)
+        txt = self._font_btn.render(label, True, text_col)
         surface.blit(txt, txt.get_rect(center=r.center))
 
     def _get_btn_rect(self) -> pygame.Rect:

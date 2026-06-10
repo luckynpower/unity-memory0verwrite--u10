@@ -2,12 +2,15 @@
 Rooms screen — shows all 8 rooms with locked/playable/cleared states.
 State key: "rooms"
 """
+import math
+import random
 import pygame
+import core.fx as fx
 from scenes.base_scene import BaseScene
 from core.settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, ROOMS,
     BG_DARK, BG_MID, BG_PANEL,
-    ACCENT_GREEN, ACCENT_CYAN, ACCENT_RED, ACCENT_ORANGE, ACCENT_YELLOW,
+    ACCENT_GREEN, ACCENT_CYAN, ACCENT_RED, ACCENT_ORANGE, ACCENT_GOLD,
     TEXT_PRIMARY, TEXT_DIM, TEXT_MUTED, BORDER,
 )
 
@@ -15,7 +18,6 @@ _TIER_COLOR = {1: ACCENT_GREEN, 2: ACCENT_CYAN, 3: ACCENT_ORANGE, 4: ACCENT_RED}
 _TIER_LABEL = {1: "Tier 1  Entry Point", 2: "Tier 2  Technical",
                3: "Tier 3  Hacker Mindset", 4: "Tier 4  Deep Dive"}
 
-# Card layout
 _COLS    = 4
 _ROWS    = 2
 _CARD_W  = 270
@@ -24,6 +26,8 @@ _GUTTER  = 18
 _START_X = (SCREEN_WIDTH  - (_COLS * _CARD_W + (_COLS - 1) * _GUTTER)) // 2
 _START_Y = 115
 _HEADER_H = 80
+
+_GLITCH_CHARS = "#@!%*?></"
 
 
 class WorldMap(BaseScene):
@@ -36,10 +40,12 @@ class WorldMap(BaseScene):
         self._font_btn   = pygame.font.SysFont("consolas", 13)
         self._nodes: list[dict] = []
         self._tooltip_room: dict | None = None
+        self._time = 0.0
 
     def on_enter(self, **kwargs) -> None:
         self._build_nodes()
         self._tooltip_room = None
+        self._time = 0.0
 
     def _build_nodes(self) -> None:
         self._nodes = []
@@ -65,12 +71,13 @@ class WorldMap(BaseScene):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for node in self._nodes:
                 if node["room"]["available"] and node["rect"].collidepoint(event.pos):
-                    self.game.audio.play("click")
+                    self.game.audio.play("room_enter")
                     self.game.sm.transition("room_game", room_id=node["room"]["id"])
 
     # ── update ────────────────────────────────────────────────────────────────
 
     def update(self, dt: float) -> None:
+        self._time += dt
         mx, my = pygame.mouse.get_pos()
         self._tooltip_room = None
         for node in self._nodes:
@@ -83,13 +90,23 @@ class WorldMap(BaseScene):
 
     def draw(self, surface: pygame.Surface) -> None:
         surface.fill(BG_DARK)
+        self._draw_grid_bg(surface)
         self._draw_header(surface)
         mx, my = pygame.mouse.get_pos()
         for node in self._nodes:
             self._draw_card(surface, node, (mx, my))
         self._draw_fragments_bar(surface)
+        fx.scanlines(surface, alpha=22)
         if self._tooltip_room:
             self._draw_tooltip(surface, self._tooltip_room, (mx, my))
+
+    def _draw_grid_bg(self, surface: pygame.Surface) -> None:
+        """Subtle dot-grid pattern for the cyber-world feel."""
+        dot_spacing = 32
+        dot_col     = (22, 30, 52)
+        for x in range(0, SCREEN_WIDTH, dot_spacing):
+            for y in range(_HEADER_H, SCREEN_HEIGHT - 30, dot_spacing):
+                pygame.draw.circle(surface, dot_col, (x, y), 1)
 
     def _draw_header(self, surface: pygame.Surface) -> None:
         pygame.draw.rect(surface, BG_MID, (0, 0, SCREEN_WIDTH, _HEADER_H))
@@ -98,11 +115,10 @@ class WorldMap(BaseScene):
         title = self._font_h1.render("MEMORY0VERWRITE  //  ROOMS", True, ACCENT_CYAN)
         surface.blit(title, (28, 18))
 
-        # Fragment counter
         cleared_count = sum(1 for r in ROOMS if self.game.save.is_cleared(r["id"]))
+        col  = ACCENT_GREEN if cleared_count > 0 else TEXT_MUTED
         frag = self._font_body.render(
-            f"Memory fragments recovered:  {cleared_count} / {len(ROOMS)}",
-            True, ACCENT_GREEN if cleared_count > 0 else TEXT_MUTED,
+            f"Memory fragments recovered:  {cleared_count} / {len(ROOMS)}", True, col
         )
         surface.blit(frag, (28, 50))
 
@@ -117,35 +133,43 @@ class WorldMap(BaseScene):
         cleared   = node["cleared"]
         hovered   = rect.collidepoint(mouse) and available
         tier_col  = _TIER_COLOR.get(room["tier"], TEXT_DIM)
+        idx       = ROOMS.index(room)
 
         # ── background ────────────────────────────────────────────────────────
         if cleared:
-            fill = (10, 36, 20)
+            fill = (20, 14, 4)
         elif hovered:
             fill = (18, 26, 48)
         elif available:
             fill = BG_PANEL
         else:
-            fill = (10, 12, 20)
+            fill = (13, 8, 14)   # dark, slightly purplish-red tint
         pygame.draw.rect(surface, fill, rect, border_radius=7)
 
         # ── border ─────────────────────────────────────────────────────────────
         if cleared:
-            border_col = ACCENT_GREEN
             bw = 2
+            border_col = ACCENT_GOLD
         elif hovered:
-            border_col = ACCENT_CYAN
             bw = 2
+            border_col = ACCENT_CYAN
         elif available:
-            border_col = BORDER
             bw = 1
+            pulse = 0.40 + 0.30 * abs(math.sin(self._time * 1.6 + idx * 0.9))
+            r0, g0, b0 = BORDER
+            rc, gc, bc = ACCENT_CYAN
+            border_col = (
+                int(r0 + (rc - r0) * pulse),
+                int(g0 + (gc - g0) * pulse),
+                int(b0 + (bc - b0) * pulse),
+            )
         else:
-            border_col = (20, 25, 40)
             bw = 1
+            border_col = (28, 14, 22)   # dark maroon — corrupted
         pygame.draw.rect(surface, border_col, rect, bw, border_radius=7)
 
         # ── tier stripe ───────────────────────────────────────────────────────
-        stripe_col = tier_col if available else (25, 30, 50)
+        stripe_col = (tier_col if available else (22, 12, 18))
         pygame.draw.rect(surface, stripe_col,
                          pygame.Rect(rect.x + 2, rect.y + 2, rect.w - 4, 4),
                          border_radius=3)
@@ -153,25 +177,32 @@ class WorldMap(BaseScene):
         x0 = rect.x + 12
         y  = rect.y + 14
 
-        # ── room number + title ───────────────────────────────────────────────
-        num_col = ACCENT_GREEN if cleared else (ACCENT_CYAN if available else TEXT_MUTED)
-        num  = self._font_room.render(f"Room {room['number']}", True, num_col)
+        # ── room number ───────────────────────────────────────────────────────
+        num_col = (ACCENT_GOLD if cleared else
+                   ACCENT_CYAN if available else TEXT_MUTED)
+        num = self._font_room.render(f"Room {room['number']}", True, num_col)
         surface.blit(num, (x0, y))
 
         if cleared:
-            score_s = self._font_sm.render(f"{node['score']} pts", True, ACCENT_GREEN)
+            score_s = self._font_sm.render(f"{node['score']} pts", True, ACCENT_GOLD)
             surface.blit(score_s, (rect.right - score_s.get_width() - 12, y + 2))
 
         y += num.get_height() + 3
 
-        t_col  = TEXT_PRIMARY if available else TEXT_MUTED
-        title  = self._font_room.render(room["title"], True, t_col)
+        # ── title — corruption effect on locked rooms ─────────────────────────
+        if available:
+            title_text = room["title"]
+            t_col      = TEXT_PRIMARY
+        else:
+            title_text = self._corrupt_text(room["title"], room["id"])
+            t_col      = (52, 32, 44)   # very dim reddish
+        title = self._font_room.render(title_text, True, t_col)
         surface.blit(title, (x0, y))
         y += title.get_height() + 5
 
         # ── concept line ──────────────────────────────────────────────────────
-        concept = self._font_sm.render(room.get("concept", ""), True,
-                                       tier_col if available else TEXT_MUTED)
+        concept_col = (tier_col if available else (32, 18, 28))
+        concept = self._font_sm.render(room.get("concept", ""), True, concept_col)
         surface.blit(concept, (x0, y))
         y += concept.get_height() + 6
 
@@ -180,31 +211,40 @@ class WorldMap(BaseScene):
         y += 8
 
         # ── teaser ────────────────────────────────────────────────────────────
-        teaser_text = room.get("teaser", "")
-        teaser_col  = TEXT_DIM if available else TEXT_MUTED
-        teaser_lines = self._wrap(teaser_text, self._font_sm, rect.w - 24)
+        teaser_col   = (TEXT_DIM if available else (38, 22, 32))
+        teaser_lines = self._wrap(room.get("teaser", ""), self._font_sm, rect.w - 24)
         for line in teaser_lines[:2]:
             ls = self._font_sm.render(line, True, teaser_col)
             surface.blit(ls, (x0, y))
             y += self._font_sm.get_height() + 2
 
         # ── status badge ──────────────────────────────────────────────────────
+        by = rect.bottom - self._font_btn.get_height() - 12
         if cleared:
-            badge = self._font_btn.render("[  CLEARED  ]", True, ACCENT_GREEN)
+            badge = self._font_btn.render("[ MEMORY RECOVERED ]", True, ACCENT_GOLD)
         elif available:
             badge = self._font_btn.render(
                 "[  ENTER  ]" if hovered else "[  AVAILABLE  ]",
                 True, ACCENT_CYAN if hovered else ACCENT_GREEN,
             )
         else:
-            badge = self._font_sm.render("[  LOCKED  ]", True, TEXT_MUTED)
+            badge = self._font_sm.render("[ CORRUPTED ]", True, (70, 26, 46))
 
-        surface.blit(badge, (x0, rect.bottom - badge.get_height() - 10))
+        surface.blit(badge, (x0, by))
+
+    def _corrupt_text(self, text: str, room_id: str) -> str:
+        """Glitch a room title with random char substitutions that change every ~0.4 s."""
+        seed = int(self._time * 2.5) * 7919 + (hash(room_id) & 0xFFFF)
+        rng  = random.Random(seed)
+        chars = list(text)
+        for i in range(len(chars)):
+            if chars[i] != ' ' and rng.random() < 0.20:
+                chars[i] = rng.choice(_GLITCH_CHARS)
+        return ''.join(chars)
 
     def _draw_fragments_bar(self, surface: pygame.Surface) -> None:
-        """Small dot row at bottom showing fragment collection progress."""
-        total  = len(ROOMS)
-        dot_r  = 5
+        total   = len(ROOMS)
+        dot_r   = 5
         spacing = 18
         total_w = total * (dot_r * 2) + (total - 1) * (spacing - dot_r * 2)
         sx = SCREEN_WIDTH // 2 - total_w // 2
@@ -213,7 +253,7 @@ class WorldMap(BaseScene):
         for i, room in enumerate(ROOMS):
             x       = sx + i * spacing
             cleared = self.game.save.is_cleared(room["id"])
-            col     = ACCENT_GREEN if cleared else (BORDER if room["available"] else TEXT_MUTED)
+            col     = ACCENT_GOLD if cleared else (BORDER if room["available"] else (28, 14, 22))
             pygame.draw.circle(surface, col, (x, y), dot_r, 0 if cleared else 1)
 
         label = self._font_sm.render("FRAGMENT PROGRESS", True, TEXT_MUTED)
@@ -221,7 +261,6 @@ class WorldMap(BaseScene):
 
     def _draw_tooltip(self, surface: pygame.Surface,
                       room: dict, mouse: tuple) -> None:
-        """Shows teaser + concept for locked rooms on hover."""
         lines = [
             room["title"],
             room.get("concept", ""),

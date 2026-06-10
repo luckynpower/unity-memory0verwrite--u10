@@ -6,6 +6,7 @@ Features: matrix-rain background, glitch-title animation,
 import math
 import random
 import pygame
+import core.fx as fx
 from scenes.base_scene import BaseScene
 from core.settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT,
@@ -154,6 +155,7 @@ class MainMenu(BaseScene):
         self._draw_story_teaser(surface)
         self._draw_buttons(surface)
         self._draw_footer(surface)
+        fx.scanlines(surface, alpha=20)
 
     def _draw_vignette(self, surface: pygame.Surface) -> None:
         """Dark radial gradient from edges to keep text readable."""

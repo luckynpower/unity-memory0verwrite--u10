@@ -389,13 +389,17 @@ class Room(BaseRoom):
         if profile.get("joined"):
             rows.append((profile["joined"], self._fsm, TEXT_MUTED))
         for exp in profile.get("experience", []):
+            if not isinstance(exp, dict):
+                continue
             rows.append((
-                f"  {exp['title']}  @  {exp['company']}  ({exp['duration']})",
+                f"  {exp.get('title','?')}  @  {exp.get('company','?')}  ({exp.get('duration','?')})",
                 self._fsm, TEXT_DIM,
             ))
         for edu in profile.get("education", []):
+            if not isinstance(edu, dict):
+                continue
             rows.append((
-                f"  {edu['degree']}  -  {edu['institution']}  ({edu['year']})",
+                f"  {edu.get('degree','?')}  -  {edu.get('institution','?')}  ({edu.get('year','?')})",
                 self._fsm, TEXT_MUTED,
             ))
 
