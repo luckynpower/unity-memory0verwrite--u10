@@ -5,11 +5,6 @@ from core.settings import BG_DARK, BG_MID, TEXT_DIM, TEXT_MUTED, ACCENT_CYAN, BO
 
 
 def _load_room(room_id: str, game):
-    """
-    Import rooms.<id>.room dynamically and return a Room instance.
-    Returns None when the room has no implementation yet — the scene
-    then shows a placeholder screen instead of crashing.
-    """
     module_path = ROOM_MODULE_MAP.get(room_id)
     if module_path is None:
         return None
@@ -28,7 +23,7 @@ class RoomGame(BaseScene):
         self._font     = pygame.font.SysFont("consolas", 20)
         self._font_sm  = pygame.font.SysFont("consolas", 14)
 
-    # ---------------------------------------------------------------- lifecycle
+    # ── lifecycle ─────────────────────────────────────────────────────────────
 
     def on_enter(self, room_id: str = "", **kwargs) -> None:
         self._room_id = room_id
@@ -41,25 +36,33 @@ class RoomGame(BaseScene):
             self._room.teardown()
             self._room = None
 
-    # ---------------------------------------------------------------- events
+    # ── events ────────────────────────────────────────────────────────────────
 
     def handle_event(self, event: pygame.event.Event) -> None:
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            self.game.sm.transition("world_map")
+            self.game.audio.play("click")
+            self.game.sm.transition("rooms")
             return
         if self._room:
             self._room.handle_event(event)
 
-    # ---------------------------------------------------------------- update
+    # ── update ────────────────────────────────────────────────────────────────
 
     def update(self, dt: float) -> None:
         if self._room:
             self._room.update(dt)
             if self._room.is_complete:
-                self.game.save.mark_cleared(self._room_id, self._room.get_score())
-                self.game.sm.transition("world_map")
+                score     = self._room.get_score()
+                max_score = getattr(self._room, "MAX_SCORE", 500)
+                self.game.save.mark_cleared(self._room_id, score)
+                self.game.sm.transition(
+                    "room_result",
+                    room_id=self._room_id,
+                    score=score,
+                    max_score=max_score,
+                )
 
-    # ---------------------------------------------------------------- draw
+    # ── draw ──────────────────────────────────────────────────────────────────
 
     def draw(self, surface: pygame.Surface) -> None:
         if self._room:
@@ -70,15 +73,14 @@ class RoomGame(BaseScene):
     def _draw_placeholder(self, surface: pygame.Surface) -> None:
         surface.fill(BG_DARK)
         cx, cy = surface.get_width() // 2, surface.get_height() // 2
-
-        box = pygame.Rect(cx - 300, cy - 80, 600, 160)
+        box = pygame.Rect(cx - 320, cy - 70, 640, 140)
         pygame.draw.rect(surface, BG_MID, box, border_radius=6)
         pygame.draw.rect(surface, BORDER, box, 2, border_radius=6)
-
         msg = self._font.render(
             f"Room '{self._room_id}' is not yet implemented.", True, TEXT_DIM
         )
-        surface.blit(msg, msg.get_rect(center=(cx, cy - 20)))
-
-        hint = self._font_sm.render("Press ESC to return to the world map.", True, TEXT_MUTED)
-        surface.blit(hint, hint.get_rect(center=(cx, cy + 20)))
+        surface.blit(msg, msg.get_rect(center=(cx, cy - 14)))
+        hint = self._font_sm.render(
+            "Press ESC to return to the rooms screen.", True, TEXT_MUTED
+        )
+        surface.blit(hint, hint.get_rect(center=(cx, cy + 18)))

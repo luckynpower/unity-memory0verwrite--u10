@@ -3,6 +3,7 @@ import pygame
 from core.settings import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, BG_DARK
 from core.state_machine import StateMachine
 from core.save_manager import SaveManager
+from core.audio import AudioManager
 
 
 class Game:
@@ -11,19 +12,23 @@ class Game:
         pygame.display.set_caption(TITLE)
         self.clock  = pygame.time.Clock()
         self.save   = SaveManager()
+        self.audio  = AudioManager()
         self.sm     = StateMachine()
         self._register_scenes()
         self.sm.transition("main_menu")
 
     def _register_scenes(self) -> None:
-        # Imported here to keep circular-import risk near zero.
-        from scenes.main_menu import MainMenu
-        from scenes.world_map import WorldMap
-        from scenes.room_game import RoomGame
+        from scenes.main_menu   import MainMenu
+        from scenes.intro        import Intro
+        from scenes.world_map    import WorldMap
+        from scenes.room_game    import RoomGame
+        from scenes.room_result  import RoomResult
 
-        self.sm.register("main_menu", MainMenu(self))
-        self.sm.register("world_map",  WorldMap(self))
-        self.sm.register("room_game",  RoomGame(self))
+        self.sm.register("main_menu",   MainMenu(self))
+        self.sm.register("intro",        Intro(self))
+        self.sm.register("rooms",        WorldMap(self))   # "rooms" is the public state name
+        self.sm.register("room_game",    RoomGame(self))
+        self.sm.register("room_result",  RoomResult(self))
 
     def run(self) -> None:
         while True:
@@ -33,6 +38,9 @@ class Game:
                     self.save.save()
                     pygame.quit()
                     sys.exit()
+                # Global mute toggle: M key
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_m:
+                    self.audio.toggle_mute()
                 self.sm.handle_event(event)
             self.sm.update(dt)
             self.screen.fill(BG_DARK)

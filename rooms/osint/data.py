@@ -1,59 +1,50 @@
-# All puzzle content for Room 2 is defined here as plain data.
-# The room module reads this dict — adding new clues or tweaking answers
-# never requires touching room.py.
+# All puzzle content for Room 2.
+# Room logic in room.py reads this dict — no code changes needed to adjust clues.
 
 PUZZLE: dict = {
     "target_username": "n3uroph0x",
 
-    "intro_lines": [
-        "TARGET USERNAME : n3uroph0x",
-        "OBJECTIVE       : Build a complete profile using only public data.",
-        "METHOD          : Browse platforms. Every post is evidence.",
-    ],
+    "objective_header": "Find five pieces of information about the target.",
+    "objective_items":  ["Full Name", "Employer", "City", "Daily Routine", "Pet Name"],
 
-    # --- platforms -----------------------------------------------------------
-    # Each platform has a profile dict and a list of posts.
-    # post fields:  text, timestamp, clue (internal tag, not shown to player)
-    # -------------------------------------------------------------------------
     "platforms": {
         "chirp": {
-            "label": "Chirp",
+            "label": "Chirp  (social)",
             "color": (29, 161, 242),
             "profile": {
                 "handle":       "@n3uroph0x",
                 "display_name": "Alex M.",
                 "bio":          "Infosec enthusiast | cat parent to Biscuit | opinions my own",
-                "location":     "",
                 "joined":       "Joined January 2020",
                 "followers":    89,
                 "following":    312,
             },
             "posts": [
                 {
-                    "text":      "Morning commute again. District line never disappoints with the delays.",
-                    "timestamp": "Mon 08:23 GMT",
-                    "clue":      "timezone_gmt",
+                    "text":      "Morning commute again. District line never disappoints with delays.",
+                    "timestamp": "Mon  08:23 GMT",
+                    "clue_key":  "routine",
                 },
                 {
-                    "text":      "Lunch near the office. This weather is unreal for November.",
-                    "timestamp": "Mon 12:31 GMT",
-                    "clue":      "routine_lunch",
+                    "text":      "Lunch near the office. November sun, who knew.",
+                    "timestamp": "Mon  12:31 GMT",
+                    "clue_key":  "routine",
                 },
                 {
-                    "text":      "Biscuit knocked my coffee off the desk again. Zero remorse.",
-                    "timestamp": "Sat 09:14 GMT",
-                    "clue":      "pet_name",
+                    "text":      "Biscuit knocked my coffee off the desk. Zero remorse.",
+                    "timestamp": "Sat  09:14 GMT",
+                    "clue_key":  "pet_name",
                 },
                 {
-                    "text":      "Got the new role at TechVault! First week done.",
-                    "timestamp": "Fri 18:05 GMT",
-                    "clue":      "employer",
+                    "text":      "First week done at TechVault! New chapter.",
+                    "timestamp": "Fri  18:05 GMT",
+                    "clue_key":  "employer",
                 },
             ],
         },
 
         "facenet": {
-            "label": "Facenet",
+            "label": "Facenet  (social)",
             "color": (66, 103, 178),
             "profile": {
                 "handle":       "n3uroph0x",
@@ -66,46 +57,37 @@ PUZZLE: dict = {
             },
             "posts": [
                 {
-                    "text":      "Anyone else take the District line into Canary Wharf every day? "
-                                 "The delays are giving me character.",
+                    "text":      "Does anyone else take the District line into Canary Wharf daily? "
+                                 "Delays are character-building apparently.",
                     "timestamp": "3 days ago",
-                    "clue":      "location_london",
+                    "clue_key":  "location",
                 },
                 {
                     "text":      "Shoutout to TechVault Solutions for the welcome cake on day one.",
                     "timestamp": "2 weeks ago",
-                    "clue":      "employer_confirm",
+                    "clue_key":  "employer",
                 },
             ],
         },
 
         "prolink": {
-            "label": "ProLink",
+            "label": "ProLink  (professional)",
             "color": (0, 119, 181),
             "profile": {
                 "handle":       "alex-morgan-infosec",
                 "display_name": "Alex Morgan",
                 "headline":     "Junior Security Analyst at TechVault Solutions",
                 "location":     "Greater London, UK",
-                "about":        "Blue team ops and threat intelligence. CTF enthusiast.",
+                "about":        "Blue team ops, threat intelligence, CTF enthusiast.",
                 "experience": [
-                    {
-                        "title":    "Junior Security Analyst",
-                        "company":  "TechVault Solutions",
-                        "duration": "Oct 2024 - Present",
-                    },
-                    {
-                        "title":    "IT Support Technician",
-                        "company":  "Redbridge Council",
-                        "duration": "2022 - 2024",
-                    },
+                    {"title": "Junior Security Analyst",
+                     "company":  "TechVault Solutions", "duration": "Oct 2024 - Present"},
+                    {"title": "IT Support Technician",
+                     "company":  "Redbridge Council",   "duration": "2022 - 2024"},
                 ],
                 "education": [
-                    {
-                        "degree":      "BSc Computer Science",
-                        "institution": "University of Edinburgh",
-                        "year":        "2022",
-                    },
+                    {"degree": "BSc Computer Science",
+                     "institution": "University of Edinburgh", "year": "2022"},
                 ],
             },
             "posts": [],
@@ -116,7 +98,7 @@ PUZZLE: dict = {
             "color": (180, 90, 0),
             "profile": {
                 "handle":      "n3uroph0x",
-                "display_name":"n3uroph0x",
+                "display_name": "n3uroph0x",
                 "bio":         "Long-time lurker, occasional poster.",
                 "joined":      "Registered 2021-03-14",
                 "post_count":  47,
@@ -125,24 +107,24 @@ PUZZLE: dict = {
                 {
                     "text":      "[REVIEW] Logitech MX Keys - solid for long sessions, "
                                  "though I mostly use it at the TechVault office.",
-                    "timestamp": "2024-11-02 09:17 GMT",
-                    "clue":      "employer_geartalk",
+                    "timestamp": "2024-11-02  09:17 GMT",
+                    "clue_key":  "employer",
                 },
                 {
                     "text":      "Anyone in London going to BSides next month?",
-                    "timestamp": "2024-10-15 14:52 GMT",
-                    "clue":      "location_geartalk",
+                    "timestamp": "2024-10-15  14:52 GMT",
+                    "clue_key":  "location",
                 },
             ],
         },
     },
 
-    # --- dossier fields ------------------------------------------------------
-    # answer       : expected text (checked case-insensitively)
-    # flexible     : if True, any single answer word of len>3 counts as correct
-    # easter_egg   : if True, the value is saved as an artefact for Room 3
-    # source_hint  : hint shown next to the field label
-    # -------------------------------------------------------------------------
+    # ── Dossier fields ────────────────────────────────────────────────────────
+    # answer      : accepted text (case-insensitive contains-match)
+    # flexible    : if True, any word > 3 chars in the answer counts
+    # easter_egg  : if True, value saved as artefact for Room 3
+    # hints       : list of 2 strings — vague then specific
+    # ─────────────────────────────────────────────────────────────────────────
     "dossier_fields": [
         {
             "key":         "full_name",
@@ -150,7 +132,10 @@ PUZZLE: dict = {
             "answer":      "Alex Morgan",
             "flexible":    False,
             "easter_egg":  False,
-            "source_hint": "Check Facenet or ProLink",
+            "hints": [
+                "Check profiles that display real names, not usernames.",
+                "Look at Facenet and ProLink — both show the full name.",
+            ],
         },
         {
             "key":         "employer",
@@ -158,15 +143,21 @@ PUZZLE: dict = {
             "answer":      "TechVault Solutions",
             "flexible":    False,
             "easter_egg":  False,
-            "source_hint": "Mentioned on multiple platforms",
+            "hints": [
+                "Look for mentions of a workplace across all platforms.",
+                "The target posted about starting a new job. Check Chirp and Facenet.",
+            ],
         },
         {
             "key":         "location",
-            "label":       "City / Location",
+            "label":       "City",
             "answer":      "London",
             "flexible":    False,
             "easter_egg":  False,
-            "source_hint": "Where does the target live and work?",
+            "hints": [
+                "Location clues appear on more than one platform.",
+                "Facenet lists a location directly. Geartalk confirms it too.",
+            ],
         },
         {
             "key":         "routine",
@@ -174,7 +165,10 @@ PUZZLE: dict = {
             "answer":      "district line commute lunch 12:30",
             "flexible":    True,
             "easter_egg":  False,
-            "source_hint": "Look at timestamps and transport mentions",
+            "hints": [
+                "Timestamps on posts reveal when and where someone is active.",
+                "Two Chirp posts — one at 08:23, one at 12:31 — show a commute and a lunch break.",
+            ],
         },
         {
             "key":         "pet_name",
@@ -182,13 +176,15 @@ PUZZLE: dict = {
             "answer":      "Biscuit",
             "flexible":    False,
             "easter_egg":  True,
-            "source_hint": "Read the bio and posts carefully",
+            "hints": [
+                "People often mention their pets without thinking. Read bios carefully.",
+                "The Chirp bio mentions a cat by name.",
+            ],
         },
     ],
 
-    "score_per_field": 100,
-    "max_score":       500,
-
-    # How long the result overlay stays on screen before completing the room
-    "result_display_seconds": 4.0,
+    "score_per_field":         100,
+    "max_score":               500,
+    "result_display_seconds":  4.0,
+    "easter_egg_artefact_key": "pet_name",
 }
