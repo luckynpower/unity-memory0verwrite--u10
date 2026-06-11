@@ -66,14 +66,16 @@ class RoomGame(BaseScene):
         if self._room:
             self._room.update(dt)
             if self._room.is_complete:
-                score     = self._room.get_score()
-                max_score = getattr(self._room, "MAX_SCORE", 500)
+                score          = self._room.get_score()
+                max_score      = getattr(self._room, "MAX_SCORE", 500)
+                is_first_clear = not self.game.save.is_cleared(self._room_id)
                 self.game.save.mark_cleared(self._room_id, score)
                 self.game.sm.transition(
                     "room_result",
                     room_id=self._room_id,
                     score=score,
                     max_score=max_score,
+                    is_first_clear=is_first_clear,
                 )
 
     # ── draw ──────────────────────────────────────────────────────────────────

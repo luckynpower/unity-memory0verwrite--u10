@@ -1,9 +1,4 @@
 {
-  "cleared_rooms": {
-    "osint": 400,
-    "password": 400
-  },
-  "artefacts": {
-    "pet_name": "biscuit"
-  }
+  "cleared_rooms": {},
+  "artefacts": {}
 }
