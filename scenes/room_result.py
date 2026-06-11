@@ -34,16 +34,22 @@ class RoomResult(BaseScene):
 
     def on_enter(self, room_id: str = "", score: int = 0,
                  max_score: int = 100, **kwargs) -> None:
-        self._room_id  = room_id
-        self._score    = score
+        self._room_id   = room_id
+        self._score     = score
         self._max_score = max_score
-        self._room     = _room_by_id(room_id)
-        self._time     = 0.0
-        self._flash_t  = 0.0      # drives the initial flash effect
-        self._revealed = False    # fragment text reveal
+        self._room      = _room_by_id(room_id)
+        self._time      = 0.0
+        self._flash_t   = 0.0
+        self._revealed  = False
         self._btn_hover = False
 
-        # Play fanfare after short delay (handled in update)
+        # Check if this completion finishes all available rooms
+        available = [r for r in ROOMS if r["available"]]
+        self._is_final = bool(available) and all(
+            self.game.save.is_cleared(r["id"]) for r in available
+        )
+        self._cleared_count = sum(1 for r in ROOMS if self.game.save.is_cleared(r["id"]))
+
         self._fanfare_played = False
         self.game.audio.stop_ambient()
 
@@ -56,9 +62,15 @@ class RoomResult(BaseScene):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self._get_btn_rect().collidepoint(event.pos):
                 self.game.audio.play("click")
-                self.game.sm.transition("rooms")
+                self._continue()
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_SPACE):
             self.game.audio.play("click")
+            self._continue()
+
+    def _continue(self) -> None:
+        if self._is_final:
+            self.game.sm.transition("ending")
+        else:
             self.game.sm.transition("rooms")
 
     # ── update ────────────────────────────────────────────────────────────────
@@ -139,7 +151,54 @@ class RoomResult(BaseScene):
         fill_w = int(bar_w * pct)
         if fill_w > 0:
             pygame.draw.rect(surface, s_col, (bar_x, y, fill_w, bar_h), border_radius=4)
-        y += bar_h + 22
+        y += bar_h + 18
+
+        # ── fragment tracker ──────────────────────────────────────────────────
+        total     = len(ROOMS)
+        cleared   = self._cleared_count
+        dot_r     = 6
+        dot_space = 22
+        dots_w    = (total - 1) * dot_space + dot_r * 2
+        dx        = cx - dots_w // 2
+
+        for j, room in enumerate(ROOMS):
+            cx_j        = dx + j * dot_space
+            is_cleared  = self.game.save.is_cleared(room["id"])
+            # highlight the room we just cleared with a larger ring
+            is_this     = room["id"] == self._room_id
+            col_dot     = ACCENT_GOLD if is_cleared else (BORDER if room["available"] else BG_PANEL)
+            pygame.draw.circle(surface, col_dot, (cx_j, y + dot_r), dot_r, 0 if is_cleared else 1)
+            if is_this:
+                pygame.draw.circle(surface, ACCENT_GREEN, (cx_j, y + dot_r), dot_r + 3, 1)
+
+        y += dot_r * 2 + 8
+
+        frag_line = self._font_sm.render(
+            f"Fragments recovered:  {cleared} / {total}", True,
+            ACCENT_GOLD if cleared == total else TEXT_DIM,
+        )
+        surface.blit(frag_line, frag_line.get_rect(centerx=cx, y=y))
+        y += frag_line.get_height() + 14
+
+        # ── virus weakening indicator ─────────────────────────────────────────
+        before_pct = (total - (cleared - 1)) / total
+        after_pct  = (total - cleared) / total
+        v_label = self._font_sm.render(
+            f"VIRUS STRENGTH:  {int(before_pct * 100)}%  →  {int(after_pct * 100)}%",
+            True, ACCENT_ORANGE,
+        )
+        surface.blit(v_label, v_label.get_rect(centerx=cx, y=y))
+        y += v_label.get_height() + 6
+
+        vbar_w = 380
+        vbar_h = 8
+        vbar_x = cx - vbar_w // 2
+        pygame.draw.rect(surface, BG_PANEL, (vbar_x, y, vbar_w, vbar_h), border_radius=3)
+        vfill_w = int(vbar_w * after_pct)
+        if vfill_w > 0:
+            pygame.draw.rect(surface, ACCENT_RED, (vbar_x, y, vfill_w, vbar_h), border_radius=3)
+        pygame.draw.rect(surface, (40, 18, 30), (vbar_x, y, vbar_w, vbar_h), 1, border_radius=3)
+        y += vbar_h + 20
 
         # ── memory fragment ───────────────────────────────────────────────────
         frag_label = self._font_sm.render("[ MEMORY FRAGMENT ]", True, TEXT_MUTED)
@@ -171,17 +230,32 @@ class RoomResult(BaseScene):
             surface.blit(placeholder, placeholder.get_rect(centerx=cx, y=y))
 
     def _draw_button(self, surface: pygame.Surface) -> None:
-        r   = self._get_btn_rect()
-        col = ACCENT_GREEN if self._btn_hover else TEXT_DIM
-        bc  = ACCENT_GREEN if self._btn_hover else BORDER
-        fill = (0, 55, 28) if self._btn_hover else BG_PANEL
+        import math
+        r    = self._get_btn_rect()
+        if self._is_final:
+            pulse = 0.60 + 0.40 * abs(math.sin(self._time * 2.2))
+            r0, g0, b0 = BORDER
+            ra, ga, ba = ACCENT_GREEN
+            bc = (
+                ACCENT_GREEN if self._btn_hover else
+                (int(r0 + (ra-r0)*pulse), int(g0 + (ga-g0)*pulse), int(b0 + (ba-b0)*pulse))
+            )
+            fill  = (0, 55, 28) if self._btn_hover else BG_PANEL
+            col   = ACCENT_GREEN
+            label = "CONTINUE TO ENDING  >"
+        else:
+            col   = ACCENT_GREEN if self._btn_hover else TEXT_DIM
+            bc    = ACCENT_GREEN if self._btn_hover else BORDER
+            fill  = (0, 55, 28) if self._btn_hover else BG_PANEL
+            label = "RETURN TO ROOMS  >"
         pygame.draw.rect(surface, fill, r, border_radius=4)
         pygame.draw.rect(surface, bc,   r, 2, border_radius=4)
-        lbl = self._font_btn.render("RETURN TO ROOMS  >", True, col)
+        lbl = self._font_btn.render(label, True, col)
         surface.blit(lbl, lbl.get_rect(center=r.center))
 
     def _get_btn_rect(self) -> pygame.Rect:
-        return pygame.Rect(SCREEN_WIDTH // 2 - 180, SCREEN_HEIGHT - 90, 360, 44)
+        w = 420 if getattr(self, "_is_final", False) else 360
+        return pygame.Rect(SCREEN_WIDTH // 2 - w // 2, SCREEN_HEIGHT - 90, w, 44)
 
     @staticmethod
     def _wrap(text: str, font: pygame.font.Font, max_w: int) -> list[str]:

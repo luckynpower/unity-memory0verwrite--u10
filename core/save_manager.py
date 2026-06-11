@@ -42,3 +42,7 @@ class SaveManager:
 
     def get_artefact(self, key: str):
         return self._data["artefacts"].get(key)
+
+    def reset(self) -> None:
+        self._data = {"cleared_rooms": {}, "artefacts": {}}
+        self.save()

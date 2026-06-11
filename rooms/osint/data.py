@@ -18,7 +18,6 @@ PUZZLE: dict = {
             ("Software",        "iOS 17.0.3"),
             ("Resolution",      "4032 × 3024"),
         ],
-        "highlight_rows": {4, 5},   # zero-indexed — Location and Timezone
     },
 
     # ── Evidence 2: Social media posts ────────────────────────────────────────
@@ -32,7 +31,6 @@ PUZZLE: dict = {
                 {
                     "text":      "Biscuit knocked my coffee off the desk this morning. Absolute chaos. Zero remorse.",
                     "timestamp": "Sat  09:14 GMT",
-                    "highlight": True,
                 },
                 {
                     "text":      "Morning commute again. District line never disappoints with delays.",

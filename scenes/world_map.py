@@ -27,7 +27,9 @@ _START_X = (SCREEN_WIDTH  - (_COLS * _CARD_W + (_COLS - 1) * _GUTTER)) // 2
 _START_Y = 115
 _HEADER_H = 80
 
-_GLITCH_CHARS = "#@!%*?></"
+_GLITCH_CHARS  = "#@!%*?></"
+_ARCHIVE_BTN   = pygame.Rect(SCREEN_WIDTH - 160, 50, 148, 22)
+_ENDING_BTN    = pygame.Rect(SCREEN_WIDTH - 320, 50, 148, 22)
 
 
 class WorldMap(BaseScene):
@@ -40,12 +42,16 @@ class WorldMap(BaseScene):
         self._font_btn   = pygame.font.SysFont("consolas", 13)
         self._nodes: list[dict] = []
         self._tooltip_room: dict | None = None
-        self._time = 0.0
+        self._time  = 0.0
+        self._decays: dict[str, float] = {}
+        # Pre-allocated surface for decay overlay (reused every frame)
+        self._decay_surf = pygame.Surface((_CARD_W, _CARD_H), pygame.SRCALPHA)
 
     def on_enter(self, **kwargs) -> None:
         self._build_nodes()
         self._tooltip_room = None
-        self._time = 0.0
+        self._time  = 0.0
+        self._decays = {}   # reset decay each time rooms screen is entered
 
     def _build_nodes(self) -> None:
         self._nodes = []
@@ -61,6 +67,20 @@ class WorldMap(BaseScene):
                 "score":   self.game.save.get_score(room["id"]),
             })
 
+    def _is_unlocked(self, room: dict) -> bool:
+        """Sequential unlock: a room is unlocked if all prior available rooms are cleared."""
+        available_rooms = [r for r in ROOMS if r["available"]]
+        try:
+            idx = available_rooms.index(room)
+        except ValueError:
+            return False
+        if idx == 0:
+            return True
+        return self.game.save.is_cleared(available_rooms[idx - 1]["id"])
+
+    def _can_enter(self, room: dict) -> bool:
+        return room["available"] and self._is_unlocked(room)
+
     # ── events ────────────────────────────────────────────────────────────────
 
     def handle_event(self, event: pygame.event.Event) -> None:
@@ -69,10 +89,20 @@ class WorldMap(BaseScene):
             self.game.sm.transition("main_menu")
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if _ARCHIVE_BTN.collidepoint(event.pos):
+                self.game.audio.play("click")
+                self.game.sm.transition("archive")
+                return
+            avail = [r for r in ROOMS if r["available"]]
+            if avail and all(self.game.save.is_cleared(r["id"]) for r in avail):
+                if _ENDING_BTN.collidepoint(event.pos):
+                    self.game.audio.play("click")
+                    self.game.sm.transition("ending", skip_to_stats=True)
+                    return
             for node in self._nodes:
-                if node["room"]["available"] and node["rect"].collidepoint(event.pos):
-                    self.game.audio.play("room_enter")
-                    self.game.sm.transition("room_game", room_id=node["room"]["id"])
+                if self._can_enter(node["room"]) and node["rect"].collidepoint(event.pos):
+                    self.game.audio.play("click")
+                    self.game.sm.transition("context", room_id=node["room"]["id"])
 
     # ── update ────────────────────────────────────────────────────────────────
 
@@ -81,10 +111,18 @@ class WorldMap(BaseScene):
         mx, my = pygame.mouse.get_pos()
         self._tooltip_room = None
         for node in self._nodes:
-            node["cleared"] = self.game.save.is_cleared(node["room"]["id"])
-            node["score"]   = self.game.save.get_score(node["room"]["id"])
-            if not node["room"]["available"] and node["rect"].collidepoint(mx, my):
+            room_id = node["room"]["id"]
+            node["cleared"] = self.game.save.is_cleared(room_id)
+            node["score"]   = self.game.save.get_score(room_id)
+            if (not self._can_enter(node["room"]) and not node["cleared"]
+                    and node["rect"].collidepoint(mx, my)):
                 self._tooltip_room = node["room"]
+            # Increment decay for cleared rooms — max 1.0 after ~70 seconds
+            if node["cleared"]:
+                self._decays[room_id] = min(
+                    1.0,
+                    self._decays.get(room_id, 0.0) + dt * 0.014,
+                )
 
     # ── draw ─────────────────────────────────────────────────────────────────
 
@@ -115,23 +153,51 @@ class WorldMap(BaseScene):
         title = self._font_h1.render("MEMORY0VERWRITE  //  ROOMS", True, ACCENT_CYAN)
         surface.blit(title, (28, 18))
 
-        cleared_count = sum(1 for r in ROOMS if self.game.save.is_cleared(r["id"]))
-        col  = ACCENT_GREEN if cleared_count > 0 else TEXT_MUTED
-        frag = self._font_body.render(
-            f"Memory fragments recovered:  {cleared_count} / {len(ROOMS)}", True, col
+        cleared_count  = sum(1 for r in ROOMS if self.game.save.is_cleared(r["id"]))
+        avail_rooms    = [r for r in ROOMS if r["available"]]
+        all_beaten     = bool(avail_rooms) and all(
+            self.game.save.is_cleared(r["id"]) for r in avail_rooms
         )
+        if all_beaten:
+            frag = self._font_body.render(
+                f"[ VIRUS DEFEATED ]  ·  ALL {len(avail_rooms)} FRAGMENTS RECOVERED",
+                True, ACCENT_GREEN,
+            )
+        else:
+            col  = ACCENT_GREEN if cleared_count > 0 else TEXT_MUTED
+            frag = self._font_body.render(
+                f"Memory fragments recovered:  {cleared_count} / {len(ROOMS)}", True, col
+            )
         surface.blit(frag, (28, 50))
 
         hint = self._font_sm.render("ESC = Main Menu  |  M = toggle sound", True, TEXT_MUTED)
-        surface.blit(hint, (SCREEN_WIDTH - hint.get_width() - 28, 32))
+        surface.blit(hint, (SCREEN_WIDTH - hint.get_width() - 28, 22))
+
+        mx, my    = pygame.mouse.get_pos()
+        ab_hover  = _ARCHIVE_BTN.collidepoint((mx, my))
+        ab_col    = ACCENT_CYAN if ab_hover else TEXT_DIM
+        pygame.draw.rect(surface, BG_MID, _ARCHIVE_BTN, border_radius=3)
+        pygame.draw.rect(surface, ab_col, _ARCHIVE_BTN, 1, border_radius=3)
+        abt = self._font_sm.render("[ MEMORY ARCHIVE ]", True, ab_col)
+        surface.blit(abt, abt.get_rect(center=_ARCHIVE_BTN.center))
+
+        # VIEW ENDING button — only after all available rooms cleared
+        if all_beaten:
+            eb_hover = _ENDING_BTN.collidepoint((mx, my))
+            eb_col   = ACCENT_GREEN if eb_hover else TEXT_DIM
+            pygame.draw.rect(surface, BG_MID, _ENDING_BTN, border_radius=3)
+            pygame.draw.rect(surface, eb_col,  _ENDING_BTN, 1, border_radius=3)
+            ebt = self._font_sm.render("[ VIEW ENDING ]", True, eb_col)
+            surface.blit(ebt, ebt.get_rect(center=_ENDING_BTN.center))
 
     def _draw_card(self, surface: pygame.Surface,
                    node: dict, mouse: tuple) -> None:
         room      = node["room"]
         rect      = node["rect"]
-        available = room["available"]
         cleared   = node["cleared"]
-        hovered   = rect.collidepoint(mouse) and available
+        can_enter = self._can_enter(room)
+        locked    = room["available"] and not can_enter and not cleared
+        hovered   = rect.collidepoint(mouse) and can_enter
         tier_col  = _TIER_COLOR.get(room["tier"], TEXT_DIM)
         idx       = ROOMS.index(room)
 
@@ -140,20 +206,18 @@ class WorldMap(BaseScene):
             fill = (20, 14, 4)
         elif hovered:
             fill = (18, 26, 48)
-        elif available:
+        elif can_enter:
             fill = BG_PANEL
         else:
-            fill = (13, 8, 14)   # dark, slightly purplish-red tint
+            fill = (13, 8, 14)
         pygame.draw.rect(surface, fill, rect, border_radius=7)
 
         # ── border ─────────────────────────────────────────────────────────────
         if cleared:
-            bw = 2
-            border_col = ACCENT_GOLD
+            bw = 2; border_col = ACCENT_GOLD
         elif hovered:
-            bw = 2
-            border_col = ACCENT_CYAN
-        elif available:
+            bw = 2; border_col = ACCENT_CYAN
+        elif can_enter:
             bw = 1
             pulse = 0.40 + 0.30 * abs(math.sin(self._time * 1.6 + idx * 0.9))
             r0, g0, b0 = BORDER
@@ -163,13 +227,19 @@ class WorldMap(BaseScene):
                 int(g0 + (gc - g0) * pulse),
                 int(b0 + (bc - b0) * pulse),
             )
+        elif locked:
+            bw = 1; border_col = (50, 24, 38)
         else:
-            bw = 1
-            border_col = (28, 14, 22)   # dark maroon — corrupted
+            bw = 1; border_col = (28, 14, 22)
         pygame.draw.rect(surface, border_col, rect, bw, border_radius=7)
 
         # ── tier stripe ───────────────────────────────────────────────────────
-        stripe_col = (tier_col if available else (22, 12, 18))
+        if cleared or can_enter:
+            stripe_col = tier_col
+        elif locked:
+            stripe_col = (30, 16, 24)
+        else:
+            stripe_col = (22, 12, 18)
         pygame.draw.rect(surface, stripe_col,
                          pygame.Rect(rect.x + 2, rect.y + 2, rect.w - 4, 4),
                          border_radius=3)
@@ -178,8 +248,7 @@ class WorldMap(BaseScene):
         y  = rect.y + 14
 
         # ── room number ───────────────────────────────────────────────────────
-        num_col = (ACCENT_GOLD if cleared else
-                   ACCENT_CYAN if available else TEXT_MUTED)
+        num_col = (ACCENT_GOLD if cleared else ACCENT_CYAN if can_enter else TEXT_MUTED)
         num = self._font_room.render(f"Room {room['number']}", True, num_col)
         surface.blit(num, (x0, y))
 
@@ -189,29 +258,34 @@ class WorldMap(BaseScene):
 
         y += num.get_height() + 3
 
-        # ── title — corruption effect on locked rooms ─────────────────────────
-        if available:
-            title_text = room["title"]
-            t_col      = TEXT_PRIMARY
+        # ── title — always real text, styling varies by state ─────────────────
+        if cleared or can_enter:
+            t_col = TEXT_PRIMARY
+        elif locked:
+            t_col = TEXT_DIM
         else:
-            title_text = self._corrupt_text(room["title"], room["id"])
-            t_col      = (52, 32, 44)   # very dim reddish
-        title = self._font_room.render(title_text, True, t_col)
+            t_col = (52, 38, 60)
+        title = self._font_room.render(room["title"], True, t_col)
         surface.blit(title, (x0, y))
         y += title.get_height() + 5
 
         # ── concept line ──────────────────────────────────────────────────────
-        concept_col = (tier_col if available else (32, 18, 28))
+        concept_col = (
+            tier_col if (cleared or can_enter) else
+            TEXT_MUTED if locked else (32, 18, 28)
+        )
         concept = self._font_sm.render(room.get("concept", ""), True, concept_col)
         surface.blit(concept, (x0, y))
         y += concept.get_height() + 6
 
-        pygame.draw.line(surface, BORDER,
-                         (x0, y), (rect.right - 12, y), 1)
+        pygame.draw.line(surface, BORDER, (x0, y), (rect.right - 12, y), 1)
         y += 8
 
         # ── teaser ────────────────────────────────────────────────────────────
-        teaser_col   = (TEXT_DIM if available else (38, 22, 32))
+        teaser_col = (
+            TEXT_DIM if (cleared or can_enter) else
+            TEXT_MUTED if locked else (38, 22, 32)
+        )
         teaser_lines = self._wrap(room.get("teaser", ""), self._font_sm, rect.w - 24)
         for line in teaser_lines[:2]:
             ls = self._font_sm.render(line, True, teaser_col)
@@ -221,16 +295,31 @@ class WorldMap(BaseScene):
         # ── status badge ──────────────────────────────────────────────────────
         by = rect.bottom - self._font_btn.get_height() - 12
         if cleared:
-            badge = self._font_btn.render("[ MEMORY RECOVERED ]", True, ACCENT_GOLD)
-        elif available:
-            badge = self._font_btn.render(
+            badge_surf = self._font_btn.render("[ MEMORY RECOVERED ]", True, ACCENT_GOLD)
+        elif can_enter:
+            badge_surf = self._font_btn.render(
                 "[  ENTER  ]" if hovered else "[  AVAILABLE  ]",
                 True, ACCENT_CYAN if hovered else ACCENT_GREEN,
             )
+        elif locked:
+            badge_surf = self._font_sm.render(
+                "[ LOCKED — complete previous room ]", True, (180, 50, 80)
+            )
+            by += (self._font_btn.get_height() - self._font_sm.get_height()) // 2
         else:
-            badge = self._font_sm.render("[ CORRUPTED ]", True, (70, 26, 46))
+            badge_surf = self._font_btn.render("[ COMING SOON ]", True, TEXT_MUTED)
+        surface.blit(badge_surf, (x0, by))
 
-        surface.blit(badge, (x0, by))
+        # ── memory decay overlay (cleared rooms only) ──────────────────────────
+        if cleared:
+            decay = self._decays.get(room["id"], 0.0)
+            if decay > 0.04:
+                seed        = int(self._time * 24 + idx * 37)
+                flicker_add = 80 if (seed % 100 < int(decay * 14)) else 0
+                alpha       = min(190, int(decay * 52) + flicker_add)
+                r, g, b     = BG_DARK
+                self._decay_surf.fill((r, g, b, alpha))
+                surface.blit(self._decay_surf, rect.topleft)
 
     def _corrupt_text(self, text: str, room_id: str) -> str:
         """Glitch a room title with random char substitutions that change every ~0.4 s."""
@@ -261,13 +350,24 @@ class WorldMap(BaseScene):
 
     def _draw_tooltip(self, surface: pygame.Surface,
                       room: dict, mouse: tuple) -> None:
+        if room["available"]:
+            available_rooms = [r for r in ROOMS if r["available"]]
+            try:
+                idx  = available_rooms.index(room)
+                prev = available_rooms[idx - 1]["title"] if idx > 0 else None
+                status = f"Complete: {prev}" if prev else "AVAILABLE"
+            except ValueError:
+                status = "COMING SOON"
+        else:
+            status = "COMING SOON"
+
         lines = [
             room["title"],
             room.get("concept", ""),
             "",
             room.get("teaser", ""),
             "",
-            "COMING SOON",
+            status,
         ]
         font   = self._font_sm
         pad    = 12

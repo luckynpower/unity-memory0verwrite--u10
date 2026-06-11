@@ -21,14 +21,20 @@ class Game:
         from scenes.main_menu   import MainMenu
         from scenes.intro        import Intro
         from scenes.world_map    import WorldMap
+        from scenes.context      import Context
         from scenes.room_game    import RoomGame
         from scenes.room_result  import RoomResult
+        from scenes.archive      import Archive
+        from scenes.ending       import Ending
 
         self.sm.register("main_menu",   MainMenu(self))
         self.sm.register("intro",        Intro(self))
-        self.sm.register("rooms",        WorldMap(self))   # "rooms" is the public state name
+        self.sm.register("rooms",        WorldMap(self))
+        self.sm.register("context",      Context(self))
         self.sm.register("room_game",    RoomGame(self))
         self.sm.register("room_result",  RoomResult(self))
+        self.sm.register("archive",      Archive(self))
+        self.sm.register("ending",       Ending(self))
 
     def run(self) -> None:
         while True:
