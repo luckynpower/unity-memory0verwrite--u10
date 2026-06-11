@@ -1,0 +1,75 @@
+21:30:19  INFO      game  Game initialised — transitioning to main_menu
+21:30:19  INFO      sm  transition  (none)  ->  main_menu  kwargs=[]
+21:30:19  DEBUG     sm  transition complete -> main_menu
+21:30:19  INFO      game  Game loop started
+21:30:20  INFO      sm  transition  main_menu  ->  intro  kwargs=[]
+21:30:20  DEBUG     sm  transition complete -> intro
+21:30:30  INFO      sm  transition  intro  ->  rooms  kwargs=[]
+21:30:30  DEBUG     sm  transition complete -> rooms
+21:30:31  INFO      sm  transition  rooms  ->  context  kwargs=['room_id']
+21:30:31  DEBUG     sm  transition complete -> context
+21:30:32  INFO      sm  transition  context  ->  room_game  kwargs=['room_id', 'timer_seconds']
+21:30:32  INFO      room_game  ENTER room  id=osint  score_so_far=0
+21:30:32  DEBUG     room_game  room setup complete  id=osint
+21:30:32  DEBUG     sm  transition complete -> room_game
+21:30:51  INFO      sm  transition  room_game  ->  rooms  kwargs=[]
+21:30:51  INFO      room_game  EXIT room  id=osint
+21:30:51  DEBUG     sm  transition complete -> rooms
+21:30:52  INFO      sm  transition  rooms  ->  context  kwargs=['room_id']
+21:30:52  DEBUG     sm  transition complete -> context
+21:30:53  INFO      sm  transition  context  ->  room_game  kwargs=['room_id', 'timer_seconds']
+21:30:53  INFO      room_game  ENTER room  id=osint  score_so_far=0
+21:30:53  DEBUG     room_game  room setup complete  id=osint
+21:30:53  DEBUG     sm  transition complete -> room_game
+21:31:07  INFO      room_game  COMPLETE room  id=osint  score=400/500  first_clear=True
+21:31:07  INFO      sm  transition  room_game  ->  room_result  kwargs=['room_id', 'score', 'max_score', 'is_first_clear']
+21:31:07  INFO      room_game  EXIT room  id=osint
+21:31:07  DEBUG     sm  transition complete -> room_result
+21:31:18  INFO      sm  transition  room_result  ->  context  kwargs=['room_id']
+21:31:18  DEBUG     sm  transition complete -> context
+21:31:21  INFO      sm  transition  context  ->  room_game  kwargs=['room_id', 'timer_seconds']
+21:31:21  INFO      room_game  REPLAY room  id=osint  score_so_far=400
+21:31:21  DEBUG     room_game  room setup complete  id=osint
+21:31:21  DEBUG     sm  transition complete -> room_game
+21:31:24  INFO      sm  transition  room_game  ->  rooms  kwargs=[]
+21:31:24  INFO      room_game  EXIT room  id=osint
+21:31:24  DEBUG     sm  transition complete -> rooms
+21:31:26  INFO      sm  transition  rooms  ->  archive  kwargs=[]
+21:31:26  DEBUG     sm  transition complete -> archive
+21:31:32  INFO      sm  transition  archive  ->  rooms  kwargs=[]
+21:31:32  DEBUG     sm  transition complete -> rooms
+21:31:32  INFO      sm  transition  rooms  ->  context  kwargs=['room_id']
+21:31:32  DEBUG     sm  transition complete -> context
+21:31:34  INFO      sm  transition  context  ->  room_game  kwargs=['room_id', 'timer_seconds']
+21:31:34  INFO      room_game  ENTER room  id=password  score_so_far=0
+21:31:34  DEBUG     room_game  room setup complete  id=password
+21:31:34  DEBUG     sm  transition complete -> room_game
+21:32:39  INFO      room_game  COMPLETE room  id=password  score=400/500  first_clear=True
+21:32:39  INFO      sm  transition  room_game  ->  room_result  kwargs=['room_id', 'score', 'max_score', 'is_first_clear']
+21:32:39  INFO      room_game  EXIT room  id=password
+21:32:39  DEBUG     sm  transition complete -> room_result
+21:32:43  INFO      sm  transition  room_result  ->  context  kwargs=['room_id']
+21:32:43  DEBUG     sm  transition complete -> context
+21:32:45  INFO      sm  transition  context  ->  rooms  kwargs=[]
+21:32:45  DEBUG     sm  transition complete -> rooms
+21:32:47  INFO      sm  transition  rooms  ->  archive  kwargs=[]
+21:32:47  DEBUG     sm  transition complete -> archive
+21:32:59  INFO      sm  transition  archive  ->  rooms  kwargs=[]
+21:32:59  DEBUG     sm  transition complete -> rooms
+21:33:00  INFO      sm  transition  rooms  ->  ending  kwargs=['skip_to_stats']
+21:33:00  DEBUG     sm  transition complete -> ending
+21:33:04  INFO      sm  transition  ending  ->  rooms  kwargs=[]
+21:33:04  DEBUG     sm  transition complete -> rooms
+21:33:05  INFO      sm  transition  rooms  ->  ending  kwargs=['skip_to_stats']
+21:33:05  DEBUG     sm  transition complete -> ending
+21:33:07  INFO      sm  transition  ending  ->  archive  kwargs=[]
+21:33:07  DEBUG     sm  transition complete -> archive
+21:33:08  INFO      sm  transition  archive  ->  rooms  kwargs=[]
+21:33:08  DEBUG     sm  transition complete -> rooms
+21:33:09  INFO      sm  transition  rooms  ->  ending  kwargs=['skip_to_stats']
+21:33:09  DEBUG     sm  transition complete -> ending
+21:33:10  INFO      sm  transition  ending  ->  intro  kwargs=[]
+21:33:10  DEBUG     sm  transition complete -> intro
+21:33:12  INFO      sm  transition  intro  ->  rooms  kwargs=[]
+21:33:12  DEBUG     sm  transition complete -> rooms
+21:33:20  INFO      game  pygame.QUIT received — saving and exiting

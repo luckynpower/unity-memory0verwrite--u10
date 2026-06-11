@@ -1,4 +1,7 @@
+import logging
 import pygame
+
+log = logging.getLogger("sm")
 
 
 class StateMachine:
@@ -11,11 +14,14 @@ class StateMachine:
         self._states[name] = state
 
     def transition(self, name: str, **kwargs) -> None:
+        prev = self._current_name or "(none)"
+        log.info("transition  %s  ->  %s  kwargs=%s", prev, name, list(kwargs.keys()))
         if self._current is not None:
             self._current.on_exit()
         self._current_name = name
         self._current = self._states[name]
         self._current.on_enter(**kwargs)
+        log.debug("transition complete -> %s", name)
 
     @property
     def current_name(self) -> str:

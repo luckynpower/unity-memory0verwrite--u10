@@ -1,6 +1,9 @@
 import importlib
+import logging
 import pygame
 from scenes.base_scene import BaseScene
+
+log = logging.getLogger("room_game")
 from core.settings import (
     SCREEN_WIDTH, BG_DARK, BG_MID, TEXT_DIM, TEXT_MUTED,
     ACCENT_CYAN, ACCENT_GREEN, ACCENT_ORANGE, ACCENT_RED,
@@ -35,14 +38,20 @@ class RoomGame(BaseScene):
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
     def on_enter(self, room_id: str = "", timer_seconds: int = 600, **kwargs) -> None:
+        already_cleared = self.game.save.is_cleared(room_id)
+        action = "REPLAY" if already_cleared else "ENTER"
+        log.info("%s room  id=%s  score_so_far=%d",
+                 action, room_id, self.game.save.get_score(room_id))
         self._room_id         = room_id
         self._room            = _load_room(room_id, self.game)
         self._timer_remaining = float(timer_seconds)
         self._time            = 0.0
         if self._room:
             self._room.setup()
+            log.debug("room setup complete  id=%s", room_id)
 
     def on_exit(self) -> None:
+        log.info("EXIT room  id=%s", self._room_id)
         if self._room:
             self._room.teardown()
             self._room = None
@@ -70,6 +79,8 @@ class RoomGame(BaseScene):
                 max_score      = getattr(self._room, "MAX_SCORE", 500)
                 is_first_clear = not self.game.save.is_cleared(self._room_id)
                 self.game.save.mark_cleared(self._room_id, score)
+                log.info("COMPLETE room  id=%s  score=%d/%d  first_clear=%s",
+                         self._room_id, score, max_score, is_first_clear)
                 self.game.sm.transition(
                     "room_result",
                     room_id=self._room_id,

@@ -295,7 +295,17 @@ class WorldMap(BaseScene):
         # ── status badge ──────────────────────────────────────────────────────
         by = rect.bottom - self._font_btn.get_height() - 12
         if cleared:
-            badge_surf = self._font_btn.render("[ MEMORY RECOVERED ]", True, ACCENT_GOLD)
+            is_hs = node["score"] >= room.get("max_score", 500)
+            if is_hs:
+                badge_surf = self._font_btn.render(
+                    "[ ★ HIGH SCORE ]" if not hovered else "[ ★ HIGH SCORE — REPLAY ]",
+                    True, ACCENT_GOLD,
+                )
+            else:
+                badge_surf = self._font_btn.render(
+                    "[ MEMORY RECOVERED ]" if not hovered else "[ MEMORY RECOVERED — REPLAY ]",
+                    True, (160, 120, 0) if not hovered else ACCENT_GOLD,
+                )
         elif can_enter:
             badge_surf = self._font_btn.render(
                 "[  ENTER  ]" if hovered else "[  AVAILABLE  ]",
